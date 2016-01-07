@@ -77,6 +77,9 @@ class WriteBatchBase {
   // replication.
   virtual void PutLogData(const Slice& blob) = 0;
 
+  // Append the contents of another write batch to this write batch
+  virtual void Append(WriteBatch* other_batch) = 0;
+
   // Clear all updates buffered in this batch.
   virtual void Clear() = 0;
 

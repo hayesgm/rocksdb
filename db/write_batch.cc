@@ -369,6 +369,10 @@ void WriteBatch::PutLogData(const Slice& blob) {
   PutLengthPrefixedSlice(&rep_, blob);
 }
 
+void WriteBatch::Append(WriteBatch* other_batch) {
+    WriteBatchInternal::Append(this, other_batch);
+}
+
 void WriteBatch::SetSavePoint() {
   if (save_points_ == nullptr) {
     save_points_ = new SavePoints();

@@ -382,6 +382,7 @@ struct WriteBatchWithIndex::Rep {
   // Remember current offset of internal write batch, which is used as
   // the starting offset of the next record.
   void SetLastEntryOffset() { last_entry_offset = write_batch.GetDataSize(); }
+  void SetLastEntryOffset(size_t offset) { last_entry_offset = offset; }
 
   // In overwrite mode, find the existing entry for the same key and update it
   // to point to the current entry.
@@ -393,6 +394,7 @@ struct WriteBatchWithIndex::Rep {
   // In overwrite mode, if key already exists in the index, update it.
   void AddOrUpdateIndex(ColumnFamilyHandle* column_family, const Slice& key);
   void AddOrUpdateIndex(const Slice& key);
+  void AddOrUpdateIndexWithCfId(uint32_t column_family_id, const Slice& key);
 
   // Allocate an index entry pointing to the last entry in the write batch and
   // put it to skip list.
@@ -450,6 +452,10 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(const Slice& key) {
     AddNewEntry(0);
   }
 }
+
+void WriteBatchWithIndex::Rep::AddOrUpdateIndexWithCfId(uint32_t column_family_id) {
+  if(!UpdateExistingEntryWithCfId(column_family_id, key)) {
+    comparator.SetComparatorForCF(column_family_id, 
 
 void WriteBatchWithIndex::Rep::AddNewEntry(uint32_t column_family_id) {
     auto* mem = arena.Allocate(sizeof(WriteBatchIndexEntry));
@@ -621,6 +627,77 @@ void WriteBatchWithIndex::Merge(const Slice& key, const Slice& value) {
 
 void WriteBatchWithIndex::PutLogData(const Slice& blob) {
   rep->write_batch.PutLogData(blob);
+}
+
+class AppendHandler : public WriteBatch::Handler {
+private:
+  WriteBatchWithIndex::Rep* rep;
+  size_t last_entry_offset;
+
+  public:
+  AppendHandler(WriteBatchWithIndex::Rep* wbwi_rep) {
+    rep = wbwi_rep;
+    last_entry_offset = rep->write_batch.GetDataSize();
+  }
+  
+    virtual Status PutCF(uint32_t column_family_id, const Slice& key,
+                         const Slice& value) override {
+      rep->SetLastEntryOffset(last_entry_offset);
+      
+      if (column_family_id == 0) {
+        rep->AddOrUpdateIndex(key);
+      } else {
+        rep->AddOrUpdateIndex(column_family_id, key);
+      }
+
+      //last_entry_offset = //TODO(AR) we need to calculate what this will be
+      
+      return Status::OK();
+    }
+
+  //TODO(AR) once we have PutCF correct we need to think about the methods below
+  
+    virtual Status DeleteCF(uint32_t column_family_id,
+                            const Slice& key) override {
+      if (column_family_id == 0) {
+        AddOrUpdateIndex(key);
+      } else {
+        AddOrUpdateIndex(column_family_id, key);
+      }
+      return Status::OK();
+    }
+    virtual Status SingleDeleteCF(uint32_t column_family_id,
+                                  const Slice& key) override {
+      if (column_family_id == 0) {
+        AddOrUpdateIndex(key);
+      } else {
+        AddOrUpdateIndex(column_family_id, key);
+      }
+      return Status::OK();
+    }
+    virtual Status MergeCF(uint32_t column_family_id, const Slice& key,
+                           const Slice& value) override {
+      if (column_family_id == 0) {
+        AddOrUpdateIndex(key);
+      } else {
+        AddOrUpdateIndex(column_family_id, key);
+      }
+      return Status::OK();
+    }
+    virtual void LogData(const Slice& blob) override {
+      //no-op
+    }
+};
+
+void WriteBatchWithIndex::Append(WriteBatch* other_batch) {
+
+  //rep->SetLastEntryOffset(); //TODO(AR) record offset and figure out how to increment during the iteration
+
+  AppendHandler appendHandler(rep);
+  rep->write_batch.Append(other_batch);
+  other_batch->Iterate(&appendHandler);
+
+  //TODO(AR) iterate the other_batch extracting the cf and key and calling rep->SetLastEntryOffset() or similar && rep->AddOrUpdateIndex;
 }
 
 void WriteBatchWithIndex::Clear() { rep->Clear(); }

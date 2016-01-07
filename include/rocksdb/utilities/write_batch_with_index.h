@@ -115,6 +115,9 @@ class WriteBatchWithIndex : public WriteBatchBase {
   using WriteBatchBase::PutLogData;
   void PutLogData(const Slice& blob) override;
 
+  using WriteBatchBase::Append;
+  void Append(WriteBatch* other_batch) override;
+
   using WriteBatchBase::Clear;
   void Clear() override;
 
@@ -184,8 +187,9 @@ class WriteBatchWithIndex : public WriteBatchBase {
   //         or other Status on corruption.
   Status RollbackToSavePoint() override;
 
- private:
   struct Rep;
+
+ private:
   Rep* rep;
 };
 

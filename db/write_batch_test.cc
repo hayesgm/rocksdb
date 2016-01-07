@@ -127,7 +127,7 @@ TEST_F(WriteBatchTest, Corruption) {
             PrintContents(&batch));
 }
 
-TEST_F(WriteBatchTest, Append) {
+TEST_F(WriteBatchTest, AppendInternal) {
   WriteBatch b1, b2;
   WriteBatchInternal::SetSequence(&b1, 200);
   WriteBatchInternal::SetSequence(&b2, 300);
@@ -149,6 +149,36 @@ TEST_F(WriteBatchTest, Append) {
   ASSERT_EQ(2, b1.Count());
   b2.Delete("foo");
   WriteBatchInternal::Append(&b1, &b2);
+  ASSERT_EQ("Put(a, va)@200"
+            "Put(b, vb)@202"
+            "Put(b, vb)@201"
+            "Delete(foo)@203",
+            PrintContents(&b1));
+  ASSERT_EQ(4, b1.Count());
+}
+
+TEST_F(WriteBatchTest, Append) {
+  WriteBatch b1, b2;
+  WriteBatchInternal::SetSequence(&b1, 200);
+  WriteBatchInternal::SetSequence(&b2, 300);
+  b1.Append(&b2);
+  ASSERT_EQ("",
+            PrintContents(&b1));
+  ASSERT_EQ(0, b1.Count());
+  b2.Put("a", "va");
+  b1.Append(&b2);
+  ASSERT_EQ("Put(a, va)@200",
+            PrintContents(&b1));
+  ASSERT_EQ(1, b1.Count());
+  b2.Clear();
+  b2.Put("b", "vb");
+  b1.Append(&b2);
+  ASSERT_EQ("Put(a, va)@200"
+            "Put(b, vb)@201",
+            PrintContents(&b1));
+  ASSERT_EQ(2, b1.Count());
+  b2.Delete("foo");
+  b1.Append(&b2);
   ASSERT_EQ("Put(a, va)@200"
             "Put(b, vb)@202"
             "Put(b, vb)@201"

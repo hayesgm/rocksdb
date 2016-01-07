@@ -113,6 +113,10 @@ class WriteBatch : public WriteBatchBase {
   // replication.
   void PutLogData(const Slice& blob) override;
 
+  using WriteBatchBase::Append;
+  // Append the contents of another write batch to this write batch
+  void Append(WriteBatch* other_batch) override;
+
   using WriteBatchBase::Clear;
   // Clear all updates buffered in this batch.
   void Clear() override;
