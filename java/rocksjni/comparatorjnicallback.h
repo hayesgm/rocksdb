@@ -16,6 +16,7 @@
 #include "rocksdb/comparator.h"
 #include "rocksdb/slice.h"
 #include "port/port.h"
+#include "monitoring/instrumented_mutex.h"
 
 namespace rocksdb {
 
@@ -32,6 +33,34 @@ struct ComparatorJniCallbackOptions {
 };
 
 /**
+ * This class is used to cleanup the Global
+ * reference of a jobject at destruction
+ * time
+ */
+class JObjectCleanupWrapper {
+ public:
+  JObjectCleanupWrapper(JavaVM* jvm, const jobject&& jobj) : m_jvm(jvm), m_jobj(jobj) {}
+
+  ~JObjectCleanupWrapper() {
+    JNIEnv* env = nullptr;
+    jint rs __attribute__((unused)) =
+        m_jvm->AttachCurrentThread(reinterpret_cast<void**>(&env), nullptr);
+    assert(rs == JNI_OK);
+    env->DeleteGlobalRef(m_jobj);
+    m_jvm->DetachCurrentThread();
+  }
+
+  jobject* get() {
+    return &m_jobj;
+  }
+
+ private:
+  JavaVM* m_jvm;
+  jobject m_jobj;
+};
+
+  
+/**
  * This class acts as a bridge between C++
  * and Java. The methods in this class will be
  * called back from the RocksDB storage engine (C++)
@@ -42,9 +71,11 @@ struct ComparatorJniCallbackOptions {
  * objects that are used in the compare and findShortestSeparator
  * method callbacks. Instead of creating new objects for each callback
  * of those functions, by reuse via setHandle we are a lot
- * faster; Unfortunately this means that we have to
- * introduce independent locking in regions of each of those methods
- * via the mutexs mtx_compare and mtx_findShortestSeparator respectively
+ * faster; We use C++ 11 thread_local to achieve this caching where
+ * supported, unfortunately for the compilers that don't support this,
+ * we fall back to independent locking in regions of each of those methods
+ * via the mutexs m_mtx_compare and m_mtx_findShortestSeparator
+ * respectively.
  */
 class BaseComparatorJniCallback : public JniCallback, public Comparator {
  public:
@@ -59,18 +90,26 @@ class BaseComparatorJniCallback : public JniCallback, public Comparator {
 
  private:
     // used for synchronisation in compare method
-    std::unique_ptr<port::Mutex> mtx_compare;
+    mutable InstrumentedMutex m_mtx_compare;
     // used for synchronisation in findShortestSeparator method
-    std::unique_ptr<port::Mutex> mtx_findShortestSeparator;
+    mutable InstrumentedMutex m_mtx_findShortestSeparator;
     std::unique_ptr<const char[]> m_name;
     jmethodID m_jCompareMethodId;
     jmethodID m_jFindShortestSeparatorMethodId;
     jmethodID m_jFindShortSuccessorMethodId;
+    jobject GetSliceA(JNIEnv* env) const;
+    jobject GetSliceB(JNIEnv* env) const;
+    jobject GetSliceLimit(JNIEnv* env) const;
+    jobject GetSlice(JNIEnv* env, jobject &maybeReusedSlice,
+        InstrumentedMutex* reusedSliceMutex) const;
+    void MaybeAcquireMutex(InstrumentedMutex* mtx) const;
+    void MaybeReleaseMutex(InstrumentedMutex* mtx) const;
 
  protected:
-    jobject m_jSliceA;
-    jobject m_jSliceB;
-    jobject m_jSliceLimit;
+    virtual jobject CreateSlice(JNIEnv* env) const = 0;
+    mutable jobject m_jSliceA;
+    mutable jobject m_jSliceB;
+    mutable jobject m_jSliceLimit;
 };
 
 class ComparatorJniCallback : public BaseComparatorJniCallback {
@@ -79,6 +118,9 @@ class ComparatorJniCallback : public BaseComparatorJniCallback {
         JNIEnv* env, jobject jComparator,
         const ComparatorJniCallbackOptions* copt);
       ~ComparatorJniCallback();
+
+  protected:
+      virtual jobject CreateSlice(JNIEnv* env) const override;
 };
 
 class DirectComparatorJniCallback : public BaseComparatorJniCallback {
@@ -87,6 +129,9 @@ class DirectComparatorJniCallback : public BaseComparatorJniCallback {
         JNIEnv* env, jobject jComparator,
         const ComparatorJniCallbackOptions* copt);
       ~DirectComparatorJniCallback();
+
+  protected:
+      virtual jobject CreateSlice(JNIEnv* env) const override;
 };
 }  // namespace rocksdb
 
