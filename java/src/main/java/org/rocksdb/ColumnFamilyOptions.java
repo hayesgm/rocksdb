@@ -130,7 +130,8 @@ public class ColumnFamilyOptions extends RocksObject
   public ColumnFamilyOptions setComparator(
       final AbstractComparator<? extends AbstractSlice<?>> comparator) {
     assert (isOwningHandle());
-    setComparatorHandle(nativeHandle_, comparator.getNativeHandle());
+    setComparatorHandle(nativeHandle_, comparator.nativeHandle_,
+        comparator instanceof DirectComparator);
     comparator_ = comparator;
     return this;
   }
@@ -153,11 +154,43 @@ public class ColumnFamilyOptions extends RocksObject
     return this;
   }
 
+/**
+   * A single CompactionFilter instance to call into during compaction.
+   * Allows an application to modify/delete a key-value during background
+   * compaction.
+   *
+   * If the client requires a new compaction filter to be used for different
+   * compaction runs, it can specify call
+   * {@link #setCompactionFilterFactory(AbstractCompactionFilterFactory)}
+   * instead.
+   *
+   * The client should specify only set one of the two.
+   * {@link #setCompactionFilter(AbstractCompactionFilter)} takes precedence
+   * over {@link #setCompactionFilterFactory(AbstractCompactionFilterFactory)}
+   * if the client specifies both.
+   */
+  //TODO(AR) need to set a note on the concurrency of the compaction filter used from this method
   public ColumnFamilyOptions setCompactionFilter(
         final AbstractCompactionFilter<? extends AbstractSlice<?>>
             compactionFilter) {
     setCompactionFilterHandle(nativeHandle_, compactionFilter.nativeHandle_);
     compactionFilter_ = compactionFilter;
+    return this;
+  }
+
+  /**
+   * This is a factory that provides {@link AbstractCompactionFilter} objects
+   * which allow an application to modify/delete a key-value during background
+   * compaction.
+   *
+   * A new filter will be created on each compaction run.  If multithreaded
+   * compaction is being used, each created CompactionFilter will only be used
+   * from a single thread and so does not need to be thread-safe.
+   */
+  public ColumnFamilyOptions setCompactionFilterFactory(final AbstractCompactionFilterFactory<? extends AbstractCompactionFilter<?>> compactionFilterFactory) {
+    assert (isOwningHandle());
+    setCompactionFilterFactoryHandle(nativeHandle_, compactionFilterFactory.getNativeHandle());
+    compactionFilterFactory_ = compactionFilterFactory;
     return this;
   }
 

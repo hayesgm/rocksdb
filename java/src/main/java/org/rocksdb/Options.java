@@ -169,7 +169,8 @@ public class Options extends RocksObject
   public Options setComparator(
       final AbstractComparator<? extends AbstractSlice<?>> comparator) {
     assert(isOwningHandle());
-    setComparatorHandle(nativeHandle_, comparator.getNativeHandle());
+    setComparatorHandle(nativeHandle_, comparator.nativeHandle_,
+        comparator instanceof DirectComparator);
     comparator_ = comparator;
     return this;
   }
