@@ -1,0 +1,43 @@
+// Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree. An additional grant
+// of patent rights can be found in the PATENTS file in the same directory.
+//
+// This file implements the "bridge" between Java and C++ for
+// rocksdb::CompactionFilterFactory.
+
+#include <jni.h>
+#include <memory>
+
+#include "include/org_rocksdb_AbstractCompactionFilterFactory.h"
+#include "rocksjni/compaction_filter_factory_jnicallback.h"
+
+/*
+ * Class:     org_rocksdb_AbstractCompactionFilterFactory
+ * Method:    createNewCompactionFilterFactory0
+ * Signature: ()J
+ */
+jlong Java_org_rocksdb_AbstractCompactionFilterFactory_createNewCompactionFilterFactory0(
+    JNIEnv* env, jobject jobj) {
+  auto* cff = new rocksdb::CompactionFilterFactoryJniCallback(env, jobj);
+
+  auto* ptr_sptr_cff = new std::shared_ptr<rocksdb::CompactionFilterFactoryJniCallback>(cff);
+
+  // TODO(AR) `ptr_sptr_cff` is never deleted :-(
+
+  return reinterpret_cast<jlong>(ptr_sptr_cff);
+}
+
+/*
+ * Class:     org_rocksdb_AbstractCompactionFilterFactory
+ * Method:    disposeInternal
+ * Signature: (J)V
+ */
+void Java_org_rocksdb_AbstractCompactionFilterFactory_disposeInternal(
+    JNIEnv* env, jobject jobj, jlong jhandle) {
+  auto* handle =
+      reinterpret_cast<std::shared_ptr<rocksdb::CompactionFilterFactoryJniCallback> *>(jhandle);
+  handle->reset();
+
+  // TODO(AR) `handle` is never deleted :-(
+}

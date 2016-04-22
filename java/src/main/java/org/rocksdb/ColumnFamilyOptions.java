@@ -154,7 +154,7 @@ public class ColumnFamilyOptions extends RocksObject
     return this;
   }
 
-/**
+  /**
    * A single CompactionFilter instance to call into during compaction.
    * Allows an application to modify/delete a key-value during background
    * compaction.
@@ -189,7 +189,7 @@ public class ColumnFamilyOptions extends RocksObject
    */
   public ColumnFamilyOptions setCompactionFilterFactory(final AbstractCompactionFilterFactory<? extends AbstractCompactionFilter<?>> compactionFilterFactory) {
     assert (isOwningHandle());
-    setCompactionFilterFactoryHandle(nativeHandle_, compactionFilterFactory.getNativeHandle());
+    setCompactionFilterFactoryHandle(nativeHandle_, compactionFilterFactory.nativeHandle_);
     compactionFilterFactory_ = compactionFilterFactory;
     return this;
   }
@@ -799,6 +799,8 @@ public class ColumnFamilyOptions extends RocksObject
   private native void setMergeOperator(long handle, long mergeOperatorHandle);
   private native void setCompactionFilterHandle(long handle,
       long compactionFilterHandle);
+  private native void setCompactionFilterFactoryHandle(long handle,
+      long compactionFilterFactoryHandle);
   private native void setWriteBufferSize(long handle, long writeBufferSize)
       throws IllegalArgumentException;
   private native long writeBufferSize(long handle);
@@ -936,8 +938,9 @@ public class ColumnFamilyOptions extends RocksObject
   private TableFormatConfig tableFormatConfig_;
   private AbstractComparator<? extends AbstractSlice<?>> comparator_;
   private AbstractCompactionFilter<? extends AbstractSlice<?>> compactionFilter_;
+  AbstractCompactionFilterFactory<? extends AbstractCompactionFilter<?>>
+      compactionFilterFactory_;
   private CompactionOptionsUniversal compactionOptionsUniversal_;
   private CompactionOptionsFIFO compactionOptionsFIFO_;
   private CompressionOptions compressionOptions_;
-
 }
