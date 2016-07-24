@@ -431,7 +431,7 @@ void Java_org_rocksdb_Options_setDbPaths(
           jtarget_sizes, ptr_jtarget_size, JNI_ABORT);
       return;
     }
-    std::string path = rocksdb::JniUtil::copyString(
+    std::string path = rocksdb::JniUtil::copyStdString(
         env, static_cast<jstring>(jpath), &has_exception);
     env->DeleteLocalRef(jpath);
 
@@ -4486,7 +4486,7 @@ void Java_org_rocksdb_DBOptions_setDbPaths(
           jtarget_sizes, ptr_jtarget_size, JNI_ABORT);
       return;
     }
-    std::string path = rocksdb::JniUtil::copyString(
+    std::string path = rocksdb::JniUtil::copyStdString(
         env, static_cast<jstring>(jpath), &has_exception);
     env->DeleteLocalRef(jpath);
 
