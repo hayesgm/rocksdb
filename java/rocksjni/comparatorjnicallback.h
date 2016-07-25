@@ -59,9 +59,9 @@ class BaseComparatorJniCallback : public JniCallback, public Comparator {
 
  private:
     // used for synchronisation in compare method
-    port::Mutex* mtx_compare;
+    std::unique_ptr<port::Mutex> mtx_compare;
     // used for synchronisation in findShortestSeparator method
-    port::Mutex* mtx_findShortestSeparator;
+    std::unique_ptr<port::Mutex> mtx_findShortestSeparator;
     std::unique_ptr<const char[]> m_name;
     jmethodID m_jCompareMethodId;
     jmethodID m_jFindShortestSeparatorMethodId;
