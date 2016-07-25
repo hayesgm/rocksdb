@@ -1734,7 +1734,7 @@ public class Options extends RocksObject
       long memtableMemoryBudget);
   private native void setComparatorHandle(long handle, int builtinComparator);
   private native void setComparatorHandle(long optHandle,
-      long comparatorHandle);
+      long comparatorHandle, boolean isDirect);
   private native void setMergeOperatorName(
       long handle, String name);
   private native void setMergeOperator(
