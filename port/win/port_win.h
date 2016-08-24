@@ -16,6 +16,15 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
+// By default assume the C++11 compiler supports thread_local
+#define thread_local_supported true
+
+// On Windows thread_local is onky supported in Visual Studio 2015+
+#if(_WIN64 && _MSC_VER < 1900)
+#undef thread_local_supported
+#define thread_local_supported false
+#endif
+
 // Assume that for everywhere
 #undef PLATFORM_IS_LITTLE_ENDIAN
 #define PLATFORM_IS_LITTLE_ENDIAN true

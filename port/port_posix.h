@@ -12,6 +12,22 @@
 #pragma once
 
 #include <thread>
+
+// By default assume the C++11 compiler supports thread_local
+#define thread_local_supported true
+
+// GCC only supports thread_local in versions GCC 4.8+
+#if (__GNUC__ <= 4 && __GNUC_MINOR__ <= 7)
+#undef thread_local_supported
+#define thread_local_supported false
+#endif
+
+// On Mac OS X thread_local is only supported in XCode 8+
+#if (__clang__ && __APPLE__ && __MACH__ && __clang_major__ < 8)
+#undef thread_local_supported
+#define thread_local_supported false
+#endif
+
 // size_t printf formatting named in the manner of C99 standard formatting
 // strings such as PRIu64
 // in fact, we could use that one
