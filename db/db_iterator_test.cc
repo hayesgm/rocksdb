@@ -252,6 +252,71 @@ TEST_F(DBIteratorTest, IterSeekForPrevBeforeNext) {
   delete iter;
 }
 
+TEST_F(DBIteratorTest, PrevAfterNextAll) {
+  ASSERT_OK(Put("k1", "v1"));
+  ASSERT_OK(Put("k2", "v2"));
+  ASSERT_OK(Put("k3", "v3"));
+  ASSERT_OK(Put("k4", "v4"));
+  ASSERT_OK(Put("k5", "v5"));
+  dbfull()->Flush(FlushOptions());
+
+  ReadOptions read_options;
+  auto* iter = db_->NewIterator(read_options);
+
+  iter->SeekToFirst();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(iter->key(), "k1");
+  ASSERT_EQ(iter->value(), "v1");
+
+  // iterate through all key/value pairs
+  while(iter->Valid()) {
+    iter->Next();
+    ASSERT_OK(iter->status());
+  }
+  ASSERT_FALSE(iter->Valid());
+
+  // we are now past the last key/value pair, attempt to move to the previous
+  iter->Prev();
+  ASSERT_OK(iter->status());
+  ASSERT_EQ(iter->key(), "k5");
+  ASSERT_EQ(iter->value(), "v5");
+
+  delete iter;
+}
+
+TEST_F(DBIteratorTest, ManagedPrevAfterNextAll) {
+  ASSERT_OK(Put("k1", "v1"));
+  ASSERT_OK(Put("k2", "v2"));
+  ASSERT_OK(Put("k3", "v3"));
+  ASSERT_OK(Put("k4", "v4"));
+  ASSERT_OK(Put("k5", "v5"));
+  dbfull()->Flush(FlushOptions());
+
+  ReadOptions read_options;
+  read_options.managed = true;
+  auto* iter = db_->NewIterator(read_options);
+
+  iter->SeekToFirst();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(iter->key(), "k1");
+  ASSERT_EQ(iter->value(), "v1");
+
+  // iterate through all key/value pairs
+  while(iter->Valid()) {
+    iter->Next();
+    ASSERT_OK(iter->status());
+  }
+  ASSERT_FALSE(iter->Valid());
+
+  // we are now past the last key/value pair, attempt to move to the previous
+  iter->Prev();
+  ASSERT_OK(iter->status());
+  ASSERT_EQ(iter->key(), "k5");
+  ASSERT_EQ(iter->value(), "v5");
+
+  delete iter;
+}
+
 namespace {
 std::string MakeLongKey(size_t length, char c) {
   return std::string(length, c);
