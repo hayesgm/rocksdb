@@ -216,6 +216,9 @@ class DB {
   // close column family instead of deleting column family handle directly
   virtual Status DestroyColumnFamilyHandle(ColumnFamilyHandle* column_family);
 
+  // Same as above, should called without mutex held and not on write thread.
+  virtual ColumnFamilyHandle* GetColumnFamilyHandleUnlocked(uint32_t column_family_id) = 0;
+
   // Set the database entry for "key" to "value".
   // If "key" already exists, it will be overwritten.
   // Returns OK on success, and a non-OK status on error.

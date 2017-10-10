@@ -493,7 +493,8 @@ class DBImpl : public DB {
   ColumnFamilyHandle* GetColumnFamilyHandle(uint32_t column_family_id);
 
   // Same as above, should called without mutex held and not on write thread.
-  ColumnFamilyHandle* GetColumnFamilyHandleUnlocked(uint32_t column_family_id);
+  using DB::GetColumnFamilyHandleUnlocked;
+  virtual ColumnFamilyHandle* GetColumnFamilyHandleUnlocked(uint32_t column_family_id) override;
 
   // Returns the number of currently running flushes.
   // REQUIREMENT: mutex_ must be held when calling this function.

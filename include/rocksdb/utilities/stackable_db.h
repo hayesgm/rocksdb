@@ -71,6 +71,11 @@ class StackableDB : public DB {
     return db_->Put(options, column_family, key, val);
   }
 
+  using DB::GetColumnFamilyHandleUnlocked;
+  virtual ColumnFamilyHandle* GetColumnFamilyHandleUnlocked(uint32_t column_family_id) override {
+    return db_->GetColumnFamilyHandleUnlocked(column_family_id);
+  }
+
   using DB::Get;
   virtual Status Get(const ReadOptions& options,
                      ColumnFamilyHandle* column_family, const Slice& key,
