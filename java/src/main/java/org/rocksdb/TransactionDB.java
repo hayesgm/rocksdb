@@ -6,7 +6,9 @@
 package org.rocksdb;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Database with Transaction support
@@ -180,6 +182,161 @@ public class TransactionDB extends RocksDB
     return txns;
   }
 
+  public static class KeyLockInfo {
+    private final String key;
+    private final long[] transactionIDs;
+    private final boolean exclusive;
+
+    public KeyLockInfo(final String key, final long transactionIDs[],
+        final boolean exclusive) {
+      this.key = key;
+      this.transactionIDs = transactionIDs;
+      this.exclusive = exclusive;
+    }
+
+    /**
+     * Get the key.
+     *
+     * @return the key
+     */
+    public String getKey() {
+      return key;
+    }
+
+    /**
+     * Get the Transaction IDs.
+     *
+     * @return the Transaction IDs.
+     */
+    public long[] getTransactionIDs() {
+      return transactionIDs;
+    }
+
+    /**
+     * Get the Lock status.
+     *
+     * @return true if the lock is exclusive, false if the lock is shared.
+     */
+    public boolean isExclusive() {
+      return exclusive;
+    }
+  }
+
+  /**
+   * Returns map of all locks held.
+   *
+   * @return a map of all the locks held.
+   */
+  public Map<ColumnFamilyHandle, KeyLockInfo> getLockStatusData() {
+    final Map<Long, KeyLockInfo> intermediate =
+        getLockStatusData(nativeHandle_);
+    final Map<ColumnFamilyHandle, KeyLockInfo> lockStatusData = new HashMap<>();
+    for(final Map.Entry<Long, KeyLockInfo> entry : intermediate.entrySet()) {
+      final ColumnFamilyHandle columnFamily
+          = new ColumnFamilyHandle(this, entry.getKey());
+      // we do not own this rocksdb::ColumnFamilyHandle!
+      columnFamily.disOwnNativeHandle();
+
+      lockStatusData.put(columnFamily, entry.getValue());
+    }
+    return lockStatusData;
+  }
+
+  /**
+   * Called from C++ native method {@link #getDeadlockInfoBuffer(long)}
+   * to construct a DeadlockInfo object.
+   *
+   * @param transactionID The transaction id
+   * @param columnFamilyHandle The native pointer value
+   *     for a rocksdb::ColumnFamilyHandle
+   * @param waitingKey the key that we are waiting on
+   * @param exclusive true if the lock is exclusive, false if the lock is shared
+   *
+   * @return The waiting transactions
+   */
+  private DeadlockInfo newDeadlockInfo(
+      final long transactionID, final long columnFamilyHandle,
+      final String waitingKey, final boolean exclusive) {
+    return new DeadlockInfo(transactionID, this, columnFamilyHandle,
+        waitingKey, exclusive);
+  }
+
+  public static class DeadlockInfo {
+    private final long transactionID;
+    private final ColumnFamilyHandle columnFamily;
+    private final String waitingKey;
+    private final boolean exclusive;
+
+    private DeadlockInfo(final long transactionID, final RocksDB parent,
+        final long columnFamilyHandle, final String waitingKey,
+        final boolean exclusive) {
+      this.transactionID = transactionID;
+      this.columnFamily = new ColumnFamilyHandle(parent, columnFamilyHandle);
+      // we do not own this rocksdb::ColumnFamilyHandle!
+      this.columnFamily.disOwnNativeHandle();
+      this.waitingKey = waitingKey;
+      this.exclusive = exclusive;
+    }
+
+    /**
+     * Get the Transaction ID.
+     *
+     * @return the transaction ID
+     */
+    public long getTransactionID() {
+      return transactionID;
+    }
+
+    /**
+     * Get the Column Family.
+     *
+     * @return The column family
+     */
+    public ColumnFamilyHandle getColumnFamily() {
+      return columnFamily;
+    }
+
+    /**
+     * Get the key that we are waiting on.
+     *
+     * @return the key that we are waiting on
+     */
+    public String getWaitingKey() {
+      return waitingKey;
+    }
+
+    /**
+     * Get the Lock status.
+     *
+     * @return true if the lock is exclusive, false if the lock is shared.
+     */
+    public boolean isExclusive() {
+      return exclusive;
+    }
+  }
+
+  public static class DeadlockPath {
+    final DeadlockInfo[] path;
+    final boolean limitExceeded;
+
+    public DeadlockPath(final DeadlockInfo[] path, final boolean limitExceeded) {
+      this.path = path;
+      this.limitExceeded = limitExceeded;
+    }
+
+    public boolean isEmpty() {
+      return path.length == 0 && !limitExceeded;
+    }
+  }
+
+  public DeadlockPath[] getDeadlockInfoBuffer() {
+    return getDeadlockInfoBuffer(nativeHandle_);
+  }
+
+  public void setDeadlockInfoBufferSize(final int targetSize) {
+    setDeadlockInfoBufferSize(nativeHandle_, targetSize);
+  }
+
   private void storeTransactionDbOptions(
       final TransactionDBOptions transactionDbOptions) {
     this.transactionDbOptions_ = transactionDbOptions;
@@ -203,5 +360,10 @@ public class TransactionDB extends RocksDB
   private native long getTransactionByName(final long handle,
       final String name);
   private native long[] getAllPreparedTransactions(final long handle);
+  private native Map<Long, KeyLockInfo> getLockStatusData(
+      final long handle);
+  private native DeadlockPath[] getDeadlockInfoBuffer(final long handle);
+  private native void setDeadlockInfoBufferSize(final long handle,
+      final int targetSize);
   @Override protected final native void disposeInternal(final long handle);
 }

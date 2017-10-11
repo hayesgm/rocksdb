@@ -14,9 +14,11 @@
 #include <jni.h>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "rocksdb/db.h"
@@ -24,6 +26,7 @@
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/status.h"
 #include "rocksdb/utilities/backupable_db.h"
+#include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksjni/compaction_filter_factory_jnicallback.h"
 #include "rocksjni/comparatorjnicallback.h"
@@ -3032,8 +3035,8 @@ class TransactionJni : public JavaClass {
    *     or nullptr if an an exception occurs
    */
   static jobject newWaitingTransactions(JNIEnv* env, jobject jtransaction,
-      rocksdb::DB* db, uint32_t column_family_id, std::string &key,
-      std::vector<TransactionID> &transaction_ids) {
+      rocksdb::DB* db, const uint32_t column_family_id, const std::string &key,
+      const std::vector<TransactionID> &transaction_ids) {
     jclass jclazz = getJClass(env);
     if(jclazz == nullptr) {
       // exception occurred accessing class
@@ -3087,6 +3090,254 @@ class TransactionJni : public JavaClass {
     }
 
     return jwaiting_transactions;
+  }
+};
+
+// The portal class for org.rocksdb.TransactionDB
+class TransactionDBJni : public JavaClass {
+ public:
+ /**
+  * Get the Java Class org.rocksdb.TransactionDB
+  *
+  * @param env A pointer to the Java environment
+  *
+  * @return The Java Class or nullptr if one of the
+  *     ClassFormatError, ClassCircularityError, NoClassDefFoundError,
+  *     OutOfMemoryError or ExceptionInInitializerError exceptions is thrown
+  */
+  static jclass getJClass(JNIEnv* env) {
+    return JavaClass::getJClass(env,
+       "org/rocksdb/TransactionDB");
+  }
+
+  /**
+   * Create a new Java org.rocksdb.TransactionDB.DeadlockInfo object
+   *
+   * @param env A pointer to the Java environment
+   * @param jtransaction A Java org.rocksdb.Transaction object
+   * @param db A pointer to the rocksdb::RockcsDB object
+   * @param column_family_id The id of the column family
+   * @param key The key
+   * @param transaction_ids The transaction ids
+   *
+   * @return A reference to a Java
+   *     org.rocksdb.Transaction.WaitingTransactions object,
+   *     or nullptr if an an exception occurs
+   */
+  static jobject newDeadlockInfo(JNIEnv* env, jobject jtransaction_db,
+      rocksdb::TransactionDB* txn_db,
+      const rocksdb::TransactionID transaction_id,
+      const uint32_t column_family_id, const std::string &waiting_key,
+      const bool exclusive) {
+    jclass jclazz = getJClass(env);
+    if(jclazz == nullptr) {
+      // exception occurred accessing class
+      return nullptr;
+    }
+
+    jmethodID mid = env->GetMethodID(
+        jclazz, "newDeadlockInfo", "(JJLjava/lang/String;Z)Lorg/rocksdb/TransactionDB$DeadlockInfo;");
+    if(mid == nullptr) {
+      // exception thrown: NoSuchMethodException or OutOfMemoryError
+      return nullptr;
+    }
+
+    jstring jwaiting_key = env->NewStringUTF(waiting_key.c_str());
+    if(jwaiting_key == nullptr) {
+      // exception thrown: OutOfMemoryError
+      return nullptr;
+    }
+
+    // resolve the column family id to a ColumnFamilyHandle
+    rocksdb::ColumnFamilyHandle* column_family =
+        txn_db->GetColumnFamilyHandleUnlocked(column_family_id);
+
+    jobject jdeadlock_info = env->CallObjectMethod(jtransaction_db,
+        mid, transaction_id, reinterpret_cast<jlong>(column_family),
+        jwaiting_key, exclusive);
+    if(env->ExceptionCheck()) {
+      // exception thrown: InstantiationException or OutOfMemoryError
+      env->DeleteLocalRef(jwaiting_key);
+      return nullptr;
+    }
+
+    return jdeadlock_info;
+  }
+};
+
+// The portal class for org.rocksdb.TxnDBWritePolicy
+class TxnDBWritePolicyJni {
+ public:
+ // Returns the equivalent org.rocksdb.TxnDBWritePolicy for the provided
+ // C++ rocksdb::TxnDBWritePolicy enum
+ static jbyte toJavaTxnDBWritePolicy(
+     const rocksdb::TxnDBWritePolicy& txndb_write_policy) {
+   switch(txndb_write_policy) {
+     case rocksdb::TxnDBWritePolicy::WRITE_COMMITTED:
+       return 0x0;
+     case rocksdb::TxnDBWritePolicy::WRITE_PREPARED:
+       return 0x1;
+    case rocksdb::TxnDBWritePolicy::WRITE_UNPREPARED:
+       return 0x2;
+     default:
+       return 0x7F;  // undefined
+   }
+ }
+
+ // Returns the equivalent C++ rocksdb::TxnDBWritePolicy enum for the
+ // provided Java org.rocksdb.TxnDBWritePolicy
+ static rocksdb::TxnDBWritePolicy toCppTxnDBWritePolicy(
+     jbyte jtxndb_write_policy) {
+   switch(jtxndb_write_policy) {
+     case 0x0:
+       return rocksdb::TxnDBWritePolicy::WRITE_COMMITTED;
+     case 0x1:
+       return rocksdb::TxnDBWritePolicy::WRITE_PREPARED;
+     case 0x2:
+       return rocksdb::TxnDBWritePolicy::WRITE_UNPREPARED;
+     default:
+       // undefined/default
+       return rocksdb::TxnDBWritePolicy::WRITE_COMMITTED;
+   }
+ }
+};
+
+// The portal class for org.rocksdb.TransactionDB.KeyLockInfo
+class KeyLockInfoJni : public JavaClass {
+ public:
+  /**
+   * Get the Java Class org.rocksdb.TransactionDB.KeyLockInfo
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return The Java Class or nullptr if one of the
+   *     ClassFormatError, ClassCircularityError, NoClassDefFoundError,
+   *     OutOfMemoryError or ExceptionInInitializerError exceptions is thrown
+   */
+  static jclass getJClass(JNIEnv* env) {
+    return JavaClass::getJClass(env,
+        "org/rocksdb/TransactionDB$KeyLockInfo");
+  }
+
+  /**
+   * Create a new Java org.rocksdb.TransactionDB.KeyLockInfo object
+   * with the same properties as the provided C++ rocksdb::KeyLockInfo object
+   *
+   * @param env A pointer to the Java environment
+   * @param key_lock_info The rocksdb::KeyLockInfo object
+   *
+   * @return A reference to a Java
+   *     org.rocksdb.TransactionDB.KeyLockInfo object,
+   *     or nullptr if an an exception occurs
+   */
+  static jobject construct(JNIEnv* env,
+      const rocksdb::KeyLockInfo& key_lock_info) {
+    jclass jclazz = getJClass(env);
+    if(jclazz == nullptr) {
+      // exception occurred accessing class
+      return nullptr;
+    }
+
+    jmethodID mid = env->GetMethodID(
+      jclazz, "<init>", "(Ljava/lang/String;[JZ)V");
+    if (mid == nullptr) {
+      // exception thrown: NoSuchMethodException or OutOfMemoryError
+      return nullptr;
+    }
+
+    jstring jkey = env->NewStringUTF(key_lock_info.key.c_str());
+    if (jkey == nullptr) {
+      // exception thrown: OutOfMemoryError
+      return nullptr;
+    }
+
+    const jsize jtransaction_ids_len = static_cast<jsize>(key_lock_info.ids.size());
+    jlongArray jtransactions_ids = env->NewLongArray(jtransaction_ids_len);
+    if (jtransactions_ids == nullptr) {
+      // exception thrown: OutOfMemoryError
+      env->DeleteLocalRef(jkey);
+      return nullptr;
+    }
+
+    const jobject jkey_lock_info = env->NewObject(jclazz, mid,
+      jkey, jtransactions_ids, key_lock_info.exclusive);
+    if(jkey_lock_info == nullptr) {
+      // exception thrown: InstantiationException or OutOfMemoryError
+      env->DeleteLocalRef(jtransactions_ids);
+      env->DeleteLocalRef(jkey);
+      return nullptr;
+    }
+
+    return jkey_lock_info;
+  }
+};
+
+// The portal class for org.rocksdb.TransactionDB.DeadlockInfo
+class DeadlockInfoJni : public JavaClass {
+ public:
+  /**
+   * Get the Java Class org.rocksdb.TransactionDB.DeadlockInfo
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return The Java Class or nullptr if one of the
+   *     ClassFormatError, ClassCircularityError, NoClassDefFoundError,
+   *     OutOfMemoryError or ExceptionInInitializerError exceptions is thrown
+   */
+   static jclass getJClass(JNIEnv* env) {
+     return JavaClass::getJClass(env,"org/rocksdb/TransactionDB$DeadlockInfo");
+  }
+};
+
+// The portal class for org.rocksdb.TransactionDB.DeadlockPath
+class DeadlockPathJni : public JavaClass {
+ public:
+  /**
+   * Get the Java Class org.rocksdb.TransactionDB.DeadlockPath
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return The Java Class or nullptr if one of the
+   *     ClassFormatError, ClassCircularityError, NoClassDefFoundError,
+   *     OutOfMemoryError or ExceptionInInitializerError exceptions is thrown
+   */
+  static jclass getJClass(JNIEnv* env) {
+    return JavaClass::getJClass(env,
+        "org/rocksdb/TransactionDB$DeadlockPath");
+  }
+
+  /**
+   * Create a new Java org.rocksdb.TransactionDB.DeadlockPath object
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return A reference to a Java
+   *     org.rocksdb.TransactionDB.DeadlockPath object,
+   *     or nullptr if an an exception occurs
+   */
+  static jobject construct(JNIEnv* env,
+    const jobjectArray jdeadlock_infos, const bool limit_exceeded) {
+    jclass jclazz = getJClass(env);
+    if(jclazz == nullptr) {
+      // exception occurred accessing class
+      return nullptr;
+    }
+
+    jmethodID mid = env->GetMethodID(
+      jclazz, "<init>", "([LDeadlockInfo;Z)V");
+    if (mid == nullptr) {
+      // exception thrown: NoSuchMethodException or OutOfMemoryError
+      return nullptr;
+    }
+
+    const jobject jdeadlock_path = env->NewObject(jclazz, mid,
+      jdeadlock_infos, limit_exceeded);
+    if(jdeadlock_path == nullptr) {
+      // exception thrown: InstantiationException or OutOfMemoryError
+      return nullptr;
+    }
+
+    return jdeadlock_path;
   }
 };
 
@@ -3681,5 +3932,155 @@ class ColumnFamilyDescriptorJni : public JavaClass {
   }
 };
 
+class MapJni : public JavaClass {
+ public:
+  /**
+   * Get the Java Class java.util.Map
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return The Java Class or nullptr if one of the
+   *     ClassFormatError, ClassCircularityError, NoClassDefFoundError,
+   *     OutOfMemoryError or ExceptionInInitializerError exceptions is thrown
+   */
+  static jclass getClass(JNIEnv* env) {
+    return JavaClass::getJClass(env, "java/util/Map");
+  }
+
+  /**
+   * Get the Java Method: Map#put
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return The Java Method ID or nullptr if the class or method id could not
+   *     be retieved
+   */
+  static jmethodID getMapPutMethodId(JNIEnv* env) {
+    jclass jlist_clazz = getClass(env);
+    if(jlist_clazz == nullptr) {
+      // exception occurred accessing class
+      return nullptr;
+    }
+
+    static jmethodID mid =
+        env->GetMethodID(jlist_clazz, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    assert(mid != nullptr);
+    return mid;
+  }
+};
+
+class HashMapJni : public JavaClass {
+ public:
+  /**
+   * Get the Java Class java.util.HashMap
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return The Java Class or nullptr if one of the
+   *     ClassFormatError, ClassCircularityError, NoClassDefFoundError,
+   *     OutOfMemoryError or ExceptionInInitializerError exceptions is thrown
+   */
+  static jclass getJClass(JNIEnv* env) {
+    return JavaClass::getJClass(env, "java/util/HashMap");
+  }
+
+  /**
+   * Create a new Java java.util.HashMap object.
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return A reference to a Java java.util.HashMap object, or
+   * nullptr if an an exception occurs
+   */
+  static jobject construct(JNIEnv* env, const uint32_t initial_capacity = 16) {
+    jclass jclazz = getJClass(env);
+    if (jclazz == nullptr) {
+      // exception occurred accessing class
+      return nullptr;
+    }
+
+    jmethodID mid = env->GetMethodID(jclazz, "<init>", "(I)V");
+    if (mid == nullptr) {
+      // exception thrown: NoSuchMethodException or OutOfMemoryError
+      return nullptr;
+    }
+
+    jobject jhash_map = env->NewObject(jclazz, mid, static_cast<jint>(initial_capacity));
+    if (env->ExceptionCheck()) {
+      return nullptr;
+    }
+
+    return jhash_map;
+  }
+
+  template <typename K, typename V>
+  using FnMapKV = std::function<std::pair<jobject, jobject> (const std::pair<K, V>&)>;
+
+  // template <class I, typename K, typename V, typename K1, typename V1, typename std::enable_if<std::is_same<typename std::iterator_traits<I>::value_type, std::pair<const K,V>>::value, int32_t>::type = 0>
+  // static void putAll(JNIEnv* env, const jobject jhash_map, I iterator, const FnMapKV<const K,V,K1,V1> &fn_map_kv) {
+  /**
+   * Returns true if it succeeds, false if an error occurs
+   */
+  template<class iterator_type, typename K, typename V>
+  static bool putAll(JNIEnv* env, const jobject jhash_map, iterator_type iterator, iterator_type end, const FnMapKV<K, V> &fn_map_kv) {
+    const jmethodID jmid_put = rocksdb::MapJni::getMapPutMethodId(env);
+    if (jmid_put == nullptr) {
+      return false;
+    }
+
+    for (auto it = iterator; it != end; ++it) {
+      const std::pair<jobject, jobject> result = fn_map_kv(*it);
+      env->CallObjectMethod(jhash_map, jmid_put, result.first, result.second);
+      if (env->ExceptionCheck()) {
+        // exception occurred
+        env->DeleteLocalRef(result.second);
+        env->DeleteLocalRef(result.first);
+        return false;
+      }
+    }
+
+    return true;
+  }
+};
+
+class LongJni : public JavaClass {
+ public:
+  /**
+   * Get the Java Class java.lang.Long
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return The Java Class or nullptr if one of the
+   *     ClassFormatError, ClassCircularityError, NoClassDefFoundError,
+   *     OutOfMemoryError or ExceptionInInitializerError exceptions is thrown
+   */
+  static jclass getJClass(JNIEnv* env) {
+    return JavaClass::getJClass(env, "java/lang/Long");
+  }
+
+  static jobject valueOf(JNIEnv* env, jlong jprimitive_long) {
+    jclass jclazz = getJClass(env);
+    if (jclazz == nullptr) {
+      // exception occurred accessing class
+      return nullptr;
+    }
+
+    jmethodID mid =
+        env->GetStaticMethodID(jclazz, "valueOf", "(J)Ljava/lang/Long;");
+    if (mid == nullptr) {
+      // exception thrown: NoSuchMethodException or OutOfMemoryError
+      return nullptr;
+    }
+
+    const jobject jlong_obj =
+        env->CallStaticObjectMethod(jclazz, mid, jprimitive_long);
+    if (env->ExceptionCheck()) {
+      // exception occurred
+      return nullptr;
+    }
+
+    return jlong_obj;
+  }
+};
 }  // namespace rocksdb
 #endif  // JAVA_ROCKSJNI_PORTAL_H_
