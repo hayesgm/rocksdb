@@ -1405,6 +1405,7 @@ class JniUtil {
       assert(jvm != nullptr);
 
       JNIEnv *env;
+      /*
       const jint env_rs = jvm->GetEnv(reinterpret_cast<void**>(&env),
           JNI_VERSION_1_2);
 
@@ -1431,6 +1432,11 @@ class JniUtil {
         std::cerr << "JniUtil::getJniEnv - Fatal: Unknown error: env_rs=" << env_rs << std::endl;
         return nullptr;
       }
+      */
+
+      env = rocksdb::getEnv();
+      *attached = JNI_FALSE;
+      return env;
     }
 
     /**

@@ -22,6 +22,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
 #include "rocksdb/types.h"
+#include "rocksjni/init.h"
 #include "rocksjni/portal.h"
 
 #ifdef min
@@ -3029,6 +3030,7 @@ void Java_org_rocksdb_RocksDB_destroyDB(
   const char* db_path = env->GetStringUTFChars(jdb_path, nullptr);
   if (db_path == nullptr) {
     // exception thrown: OutOfMemoryError
+    rocksdb::detachCurrentThread();
     return;
   }
 
@@ -3044,6 +3046,8 @@ void Java_org_rocksdb_RocksDB_destroyDB(
   if (!s.ok()) {
     rocksdb::RocksDBExceptionJni::ThrowNew(env, s);
   }
+
+  rocksdb::detachCurrentThread();
 }
 
 bool get_slice_helper(JNIEnv* env, jobjectArray ranges, jsize index,

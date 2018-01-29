@@ -1,5 +1,7 @@
 NATIVE_JAVA_CLASSES = org.rocksdb.AbstractCompactionFilter\
+	org.rocksdb.AbstractAssociativeMergeOperator\
 	org.rocksdb.AbstractCompactionFilterFactory\
+	org.rocksdb.AbstractNotAssociativeMergeOperator\
 	org.rocksdb.AbstractSlice\
 	org.rocksdb.AbstractTableFilter\
 	org.rocksdb.AbstractTraceWriter\

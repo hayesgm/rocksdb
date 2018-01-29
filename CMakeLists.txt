@@ -1059,6 +1059,7 @@ if(WITH_TESTS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
       table/mock_table.cc
       test_util/fault_injection_test_env.cc
       utilities/cassandra/test_utils.cc
+      java/rocksjni/init.h java/rocksjni/init.cc
   )
   enable_testing()
   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})

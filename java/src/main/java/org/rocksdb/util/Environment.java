@@ -18,6 +18,8 @@ public class Environment {
     }
   }
 
+  public static native void detachCurrentThreadIfPossible();
+
   public static boolean isAarch64() {
     return ARCH.contains("aarch64");
   }
