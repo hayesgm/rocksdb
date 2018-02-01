@@ -226,6 +226,13 @@ void Java_org_rocksdb_RocksDB_closeDatabase(
   rocksdb::RocksDBExceptionJni::ThrowNew(env, s);
 }
 
+//context lives until vm lives because many db instances can be present
+void Java_org_rocksdb_RocksDB_destroyJNIContext(
+        JNIEnv*, jclass) {
+
+    rocksdb::destroyJNIContext();
+}
+
 /*
  * Class:     org_rocksdb_RocksDB
  * Method:    listColumnFamilies
@@ -3046,8 +3053,6 @@ void Java_org_rocksdb_RocksDB_destroyDB(
   if (!s.ok()) {
     rocksdb::RocksDBExceptionJni::ThrowNew(env, s);
   }
-
-  rocksdb::detachCurrentThread();
 }
 
 bool get_slice_helper(JNIEnv* env, jobjectArray ranges, jsize index,
