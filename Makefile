@@ -532,6 +532,7 @@ TESTS = \
 	import_column_family_test \
 	prefix_test \
 	skiplist_test \
+	collection_merge_operator_test \
 	write_buffer_manager_test \
 	stringappend_test \
 	cassandra_format_test \
@@ -1262,6 +1263,9 @@ random_test: util/random_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 option_change_migration_test: utilities/option_change_migration/option_change_migration_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+collection_merge_operator_test: utilities/merge_operators/collection/collection_merge_operator_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 stringappend_test: utilities/merge_operators/string_append/stringappend_test.o $(LIBOBJECTS) $(TESTHARNESS)
