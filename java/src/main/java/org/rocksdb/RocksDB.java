@@ -424,6 +424,13 @@ public class RocksDB extends RocksObject {
   }
 
   /**
+   * Resume database operations.
+   */
+  public void resume() throws RocksDBException {
+    resume(nativeHandle_);
+  }
+
+  /**
    * This is similar to {@link #close()} except that it
    * throws an exception if any error occurs.
    *
@@ -4030,19 +4037,6 @@ public class RocksDB extends RocksObject {
     destroyDB(path, options.nativeHandle_);
   }
 
-  private /* @Nullable */ long[] toNativeHandleList(
-      /* @Nullable */ final List<? extends RocksObject> objectList) {
-    if (objectList == null) {
-      return null;
-    }
-    final int len = objectList.size();
-    final long[] handleList = new long[len];
-    for (int i = 0; i < len; i++) {
-      handleList[i] = objectList.get(i).nativeHandle_;
-    }
-    return handleList;
-  }
-
   private static long[] toRangeSliceHandles(final List<Range> ranges) {
     final long rangeSliceHandles[] = new long [ranges.size() * 2];
     for (int i = 0, j = 0; i < ranges.size(); i++) {
@@ -4111,6 +4105,7 @@ public class RocksDB extends RocksObject {
 
   @Override protected native void disposeInternal(final long handle);
 
+  private native static void resume(final long handle);
   private native static void closeDatabase(final long handle)
       throws RocksDBException;
   private native static byte[][] listColumnFamilies(final long optionsHandle,

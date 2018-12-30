@@ -5,6 +5,8 @@
 
 package org.rocksdb;
 
+import java.util.List;
+
 /**
  * RocksObject is an implementation of {@link AbstractNativeReference} which
  * has an immutable and therefore thread-safe reference to the underlying
@@ -27,6 +29,27 @@ public abstract class RocksObject extends AbstractImmutableNativeReference {
   protected RocksObject(final long nativeHandle) {
     super(true);
     this.nativeHandle_ = nativeHandle;
+  }
+
+  /**
+   * Given a list of RocksObjects, it returns a list
+   * of the native handles of the underlying objects.
+   *
+   * @param objectList the rocks objects
+   *
+   * @return the native handles
+   */
+  public static /* @Nullable */ long[] toNativeHandleList(
+      /* @Nullable */ final List<? extends RocksObject> objectList) {
+    if (objectList == null) {
+      return null;
+    }
+    final int len = objectList.size();
+    final long[] handleList = new long[len];
+    for (int i = 0; i < len; i++) {
+      handleList[i] = objectList.get(i).nativeHandle_;
+    }
+    return handleList;
   }
 
   /**
