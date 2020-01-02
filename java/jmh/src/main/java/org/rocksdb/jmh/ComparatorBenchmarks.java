@@ -30,14 +30,14 @@ public class ComparatorBenchmarks {
       "java_bytewise_non-direct_reused-64_non-adaptive-mutex",
       "java_bytewise_direct_reused-64_adaptive-mutex",
       "java_bytewise_direct_reused-64_non-adaptive-mutex",
-      "java_bytewise_direct_no-reuse",
+      "java_bytewise_non-direct_no-reuse",
       "java_bytewise_direct_no-reuse",
 
       "java_reverse_bytewise_non-direct_reused-64_adaptive-mutex",
       "java_reverse_bytewise_non-direct_reused-64_non-adaptive-mutex",
       "java_reverse_bytewise_direct_reused-64_adaptive-mutex",
       "java_reverse_bytewise_direct_reused-64_non-adaptive-mutex",
-      "java_reverse_bytewise_direct_no-reuse",
+      "java_reverse_bytewise_non-direct_no-reuse",
       "java_reverse_bytewise_direct_no-reuse"
   })
   public String comparatorName;
