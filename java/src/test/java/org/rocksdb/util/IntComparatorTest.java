@@ -69,7 +69,7 @@ public class IntComparatorTest {
   public static Iterable<Object[]> parameters() {
     return Arrays.asList(new Object[][] {
         { "non-direct_reused64_mutex", false, 64, ReusedSynchronisationType.MUTEX },
-        { "direct_reused64_mutex", true, 64, false, ReusedSynchronisationType.MUTEX },
+        { "direct_reused64_mutex", true, 64, ReusedSynchronisationType.MUTEX },
         { "non-direct_reused64_adaptive-mutex", false, 64, ReusedSynchronisationType.ADAPTIVE_MUTEX },
         { "direct_reused64_adaptive-mutex", true, 64, ReusedSynchronisationType.ADAPTIVE_MUTEX },
         { "non-direct_reused64_thread-local", false, 64, ReusedSynchronisationType.THREAD_LOCAL },

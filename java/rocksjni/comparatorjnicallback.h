@@ -102,6 +102,10 @@ class ComparatorJniCallback : public JniCallback, public Comparator {
       bool direct_buffer;
       jobject jbuf;
     };
+    inline void MaybeLockForReuse(const std::unique_ptr<port::Mutex>& mutex,
+        const bool cond) const;
+    inline void MaybeUnlockForReuse(const std::unique_ptr<port::Mutex>& mutex,
+        const bool cond) const;
     jobject GetBuffer(JNIEnv* env, const Slice& src, bool reuse_buffer,
         ThreadLocalPtr* tl_buf, jobject jreuse_buffer) const;
     jobject ReuseBuffer(JNIEnv* env, const Slice& src,
