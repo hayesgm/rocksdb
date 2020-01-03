@@ -14,10 +14,7 @@ ComparatorJniCallback::ComparatorJniCallback(
     JNIEnv* env, jobject jcomparator,
     const ComparatorJniCallbackOptions* options)
     : JniCallback(env, jcomparator),
-    m_options(options),
-    mtx_compare(new port::Mutex(options->use_adaptive_mutex)),
-    mtx_shortest(new port::Mutex(options->use_adaptive_mutex)),
-    mtx_short(new port::Mutex(options->use_adaptive_mutex)) {
+    m_options(options) {
 
   // Note: The name of a Comparator will not change during it's lifetime,
   // so we cache it in a global var
@@ -65,51 +62,83 @@ ComparatorJniCallback::ComparatorJniCallback(
 
   // do we need reusable buffers?
   if (m_options->max_reused_buffer_size > -1) {
-    m_jcompare_buf_a = env->NewGlobalRef(ByteBufferJni::construct(
-        env, m_options->direct_buffer, m_options->max_reused_buffer_size,
-        m_jbytebuffer_clazz));
-    if (m_jcompare_buf_a == nullptr) {
-      // exception thrown: OutOfMemoryError
-      return;
+
+    if (m_options->reused_synchronisation_type
+        == ReusedSynchronisationType::THREAD_LOCAL) {
+      // buffers reused per thread
+      UnrefHandler unref = [](void* ptr) {
+        ThreadLocalBuf* tlb = reinterpret_cast<ThreadLocalBuf*>(ptr);
+        jboolean attached_thread = JNI_FALSE;
+        JNIEnv* env = JniUtil::getJniEnv(tlb->jvm, &attached_thread);
+        if (tlb->direct_buffer) {
+          void* buf = env->GetDirectBufferAddress(tlb->jbuf);
+          delete[] static_cast<char*>(buf);
+        }
+        env->DeleteGlobalRef(tlb->jbuf);
+        JniUtil::releaseJniEnv(tlb->jvm, attached_thread);
+      };
+      
+      m_tl_buf_a = new ThreadLocalPtr(unref);
+      m_tl_buf_b = new ThreadLocalPtr(unref);
+
+    } else {
+      //buffers reused and shared across threads
+      const bool adaptive =
+          m_options->reused_synchronisation_type == ReusedSynchronisationType::ADAPTIVE_MUTEX;
+      mtx_compare = std::unique_ptr<port::Mutex>(new port::Mutex(adaptive));
+      mtx_shortest = std::unique_ptr<port::Mutex>(new port::Mutex(adaptive));
+      mtx_short = std::unique_ptr<port::Mutex>(new port::Mutex(adaptive));
+
+      m_jcompare_buf_a = env->NewGlobalRef(ByteBufferJni::construct(
+          env, m_options->direct_buffer, m_options->max_reused_buffer_size,
+          m_jbytebuffer_clazz));
+      if (m_jcompare_buf_a == nullptr) {
+        // exception thrown: OutOfMemoryError
+        return;
+      }
+
+      m_jcompare_buf_b = env->NewGlobalRef(ByteBufferJni::construct(
+          env, m_options->direct_buffer, m_options->max_reused_buffer_size,
+          m_jbytebuffer_clazz));
+      if (m_jcompare_buf_b == nullptr) {
+        // exception thrown: OutOfMemoryError
+        return;
+      }
+
+      m_jshortest_buf_start = env->NewGlobalRef(ByteBufferJni::construct(
+          env, m_options->direct_buffer, m_options->max_reused_buffer_size,
+          m_jbytebuffer_clazz));
+      if (m_jshortest_buf_start == nullptr) {
+        // exception thrown: OutOfMemoryError
+        return;
+      }
+
+      m_jshortest_buf_limit = env->NewGlobalRef(ByteBufferJni::construct(
+          env, m_options->direct_buffer, m_options->max_reused_buffer_size,
+          m_jbytebuffer_clazz));
+      if (m_jshortest_buf_limit == nullptr) {
+        // exception thrown: OutOfMemoryError
+        return;
+      }
+
+      m_jshort_buf_key = env->NewGlobalRef(ByteBufferJni::construct(
+          env, m_options->direct_buffer, m_options->max_reused_buffer_size,
+          m_jbytebuffer_clazz));
+      if (m_jshort_buf_key == nullptr) {
+        // exception thrown: OutOfMemoryError
+        return;
+      }
     }
 
-    m_jcompare_buf_b = env->NewGlobalRef(ByteBufferJni::construct(
-        env, m_options->direct_buffer, m_options->max_reused_buffer_size,
-        m_jbytebuffer_clazz));
-    if (m_jcompare_buf_b == nullptr) {
-      // exception thrown: OutOfMemoryError
-      return;
-    }
-
-    m_jshortest_buf_start = env->NewGlobalRef(ByteBufferJni::construct(
-        env, m_options->direct_buffer, m_options->max_reused_buffer_size,
-        m_jbytebuffer_clazz));
-    if (m_jshortest_buf_start == nullptr) {
-      // exception thrown: OutOfMemoryError
-      return;
-    }
-
-    m_jshortest_buf_limit = env->NewGlobalRef(ByteBufferJni::construct(
-        env, m_options->direct_buffer, m_options->max_reused_buffer_size,
-        m_jbytebuffer_clazz));
-    if (m_jshortest_buf_limit == nullptr) {
-      // exception thrown: OutOfMemoryError
-      return;
-    }
-
-    m_jshort_buf_key = env->NewGlobalRef(ByteBufferJni::construct(
-        env, m_options->direct_buffer, m_options->max_reused_buffer_size,
-        m_jbytebuffer_clazz));
-    if (m_jshort_buf_key == nullptr) {
-      // exception thrown: OutOfMemoryError
-      return;
-    }
   } else {
     m_jcompare_buf_a = nullptr;
     m_jcompare_buf_b = nullptr;
     m_jshortest_buf_start = nullptr;
     m_jshortest_buf_limit = nullptr;
     m_jshort_buf_key = nullptr;
+
+    m_tl_buf_a = nullptr;
+    m_tl_buf_b = nullptr;
   }
 }
 
@@ -160,6 +189,14 @@ ComparatorJniCallback::~ComparatorJniCallback() {
     env->DeleteGlobalRef(m_jshort_buf_key);
   }
 
+  if (m_tl_buf_a != nullptr) {
+    delete m_tl_buf_a;
+  }
+
+  if (m_tl_buf_b != nullptr) {
+    delete m_tl_buf_b;
+  }
+
   releaseJniEnv(attached_thread);
 }
 
@@ -177,14 +214,13 @@ int ComparatorJniCallback::Compare(const Slice& a, const Slice& b) const {
   const bool reuse_jbuf_b =
       static_cast<int64_t>(b.size()) <= m_options->max_reused_buffer_size;
 
-  // TODO(adamretter): ByteBuffer objects can potentially be cached using thread
-  // local variables to avoid locking. Could make this configurable depending on
-  // performance.
-  if (reuse_jbuf_a || reuse_jbuf_b) {
+  if (m_options->reused_synchronisation_type
+      != ReusedSynchronisationType::THREAD_LOCAL
+          && (reuse_jbuf_a || reuse_jbuf_b)) {
     mtx_compare.get()->Lock();
   }
 
-  jobject jcompare_buf_a = reuse_jbuf_a ? ReuseBuffer(env, a, m_jcompare_buf_a) : NewBuffer(env, a);
+  jobject jcompare_buf_a = GetBuffer(env, a, reuse_jbuf_a, m_tl_buf_a, m_jcompare_buf_a);
   if (jcompare_buf_a == nullptr) {
     // exception occurred
     env->ExceptionDescribe(); // print out exception to stderr
@@ -192,7 +228,7 @@ int ComparatorJniCallback::Compare(const Slice& a, const Slice& b) const {
     return 0;
   }
 
-  jobject jcompare_buf_b = reuse_jbuf_b ? ReuseBuffer(env, b, m_jcompare_buf_b) : NewBuffer(env, b);
+  jobject jcompare_buf_b = GetBuffer(env, b, reuse_jbuf_b, m_tl_buf_b, m_jcompare_buf_b);
   if (jcompare_buf_b == nullptr) {
     // exception occurred
     env->ExceptionDescribe(); // print out exception to stderr
@@ -221,7 +257,9 @@ int ComparatorJniCallback::Compare(const Slice& a, const Slice& b) const {
     DeleteBuffer(env, jcompare_buf_b);
   }
 
-  if (reuse_jbuf_a || reuse_jbuf_b) {
+  if (m_options->reused_synchronisation_type
+      != ReusedSynchronisationType::THREAD_LOCAL
+          && (reuse_jbuf_a || reuse_jbuf_b)) {
     mtx_compare.get()->Unlock();
   }
 
@@ -457,6 +495,39 @@ void ComparatorJniCallback::FindShortSuccessor(
   }
 
   releaseJniEnv(attached_thread);
+}
+
+jobject ComparatorJniCallback::GetBuffer(JNIEnv* env, const Slice& src,
+    bool reuse_buffer, ThreadLocalPtr* tl_buf, jobject jreuse_buffer) const {
+  if (reuse_buffer) {
+    if (m_options->reused_synchronisation_type
+        == ReusedSynchronisationType::THREAD_LOCAL) {
+      
+      // reuse thread-local bufffer
+      ThreadLocalBuf* tlb = reinterpret_cast<ThreadLocalBuf*>(tl_buf->Get());
+      if (tlb == nullptr) {
+        // thread-local buffer has not yet been created, so create it
+        jobject jtl_buf = env->NewGlobalRef(ByteBufferJni::construct(
+            env, m_options->direct_buffer, m_options->max_reused_buffer_size,
+            m_jbytebuffer_clazz));
+        if (jtl_buf == nullptr) {
+          // exception thrown: OutOfMemoryError
+          return nullptr;
+        }
+        tlb = new ThreadLocalBuf(m_jvm, m_options->direct_buffer, jtl_buf);
+        tl_buf->Reset(tlb);
+      }
+      return tlb->jbuf;
+    } else {
+
+      // reuse class member buffer
+      return ReuseBuffer(env, src, jreuse_buffer);
+    }
+  } else {
+
+    // new buffer
+    return NewBuffer(env, src);
+  }
 }
 
 jobject ComparatorJniCallback::ReuseBuffer(
