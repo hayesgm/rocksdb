@@ -69,13 +69,13 @@ ComparatorJniCallback::ComparatorJniCallback(
       UnrefHandler unref = [](void* ptr) {
         ThreadLocalBuf* tlb = reinterpret_cast<ThreadLocalBuf*>(ptr);
         jboolean attached_thread = JNI_FALSE;
-        JNIEnv* env = JniUtil::getJniEnv(tlb->jvm, &attached_thread);
-        if (env != nullptr) {
+        JNIEnv* _env = JniUtil::getJniEnv(tlb->jvm, &attached_thread);
+        if (_env != nullptr) {
           if (tlb->direct_buffer) {
-            void* buf = env->GetDirectBufferAddress(tlb->jbuf);
+            void* buf = _env->GetDirectBufferAddress(tlb->jbuf);
             delete[] static_cast<char*>(buf);
           }
-          env->DeleteGlobalRef(tlb->jbuf);
+          _env->DeleteGlobalRef(tlb->jbuf);
           JniUtil::releaseJniEnv(tlb->jvm, attached_thread);
         }
       };
