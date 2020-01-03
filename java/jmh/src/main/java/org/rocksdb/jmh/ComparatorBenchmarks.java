@@ -28,15 +28,19 @@ public class ComparatorBenchmarks {
 
       "java_bytewise_non-direct_reused-64_adaptive-mutex",
       "java_bytewise_non-direct_reused-64_non-adaptive-mutex",
+      "java_bytewise_non-direct_reused-64_thread-local",
       "java_bytewise_direct_reused-64_adaptive-mutex",
       "java_bytewise_direct_reused-64_non-adaptive-mutex",
+      "java_bytewise_direct_reused-64_thread-local",
       "java_bytewise_non-direct_no-reuse",
       "java_bytewise_direct_no-reuse",
 
       "java_reverse_bytewise_non-direct_reused-64_adaptive-mutex",
       "java_reverse_bytewise_non-direct_reused-64_non-adaptive-mutex",
+      "java_reverse_bytewise_non-direct_reused-64_thread-local",
       "java_reverse_bytewise_direct_reused-64_adaptive-mutex",
       "java_reverse_bytewise_direct_reused-64_non-adaptive-mutex",
+      "java_reverse_bytewise_direct_reused-64_thread-local",
       "java_reverse_bytewise_non-direct_no-reuse",
       "java_reverse_bytewise_direct_no-reuse"
   })
@@ -82,9 +86,11 @@ public class ComparatorBenchmarks {
       }
 
       if (comparatorName.indexOf("non-adaptive-mutex") > -1) {
-        comparatorOptions.setUseAdaptiveMutex(false);
+        comparatorOptions.setReusedSynchronisationType(ReusedSynchronisationType.MUTEX);
       } else if (comparatorName.indexOf("adaptive-mutex") > -1) {
-        comparatorOptions.setUseAdaptiveMutex(true);
+        comparatorOptions.setReusedSynchronisationType(ReusedSynchronisationType.ADAPTIVE_MUTEX);
+      } else if (comparatorName.indexOf("thread-local") > -1) {
+        comparatorOptions.setReusedSynchronisationType(ReusedSynchronisationType.THREAD_LOCAL);
       }
 
       if (comparatorName.startsWith("java_bytewise")) {
