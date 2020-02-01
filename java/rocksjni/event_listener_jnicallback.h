@@ -70,6 +70,7 @@ class EventListenerJniCallback : public JniCallback, public EventListener {
  private:
   const std::set<EnabledEventCallback> m_enabled_event_callbacks;
   jmethodID m_on_flush_completed_proxy_mid;
+  jmethodID m_on_flush_begin_proxy_mid;
 };
 
 }  //namespace rocksdb

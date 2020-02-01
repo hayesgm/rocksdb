@@ -7170,6 +7170,66 @@ class AbstractEventListenerJni : public RocksDBNativeClass<
     assert(mid != nullptr);
     return mid;
   }
+
+  /**
+   * Get the Java Method: AbstractEventListener#onFlushBeginProxy
+   *
+   * @param env A pointer to the Java environment
+   *
+   * @return The Java Method ID or nullptr if the class or method id could not
+   *     be retieved
+   */
+  static jmethodID getOnFlushBeginProxyMethodId(JNIEnv* env) {
+    jclass jclazz = getJClass(env);
+    if(jclazz == nullptr) {
+      // exception occurred accessing class
+      return nullptr;
+    }
+
+    static jmethodID mid = env->GetMethodID(
+        jclazz, "onFlushBeginProxy",
+        "(JLorg/rocksdb/FlushJobInfo;)V");
+    assert(mid != nullptr);
+    return mid;
+  }
+};
+
+// The portal class for org.rocksdb.FlushReason
+class FlushReasonJni {
+ public:
+ // Returns the equivalent org.rocksdb.FlushReason for the provided
+ // C++ rocksdb::FlushReason enum
+ static jbyte toJavaFlushReason(
+     const rocksdb::FlushReason& flush_reason) {
+   switch (flush_reason) {
+     case rocksdb::FlushReason::kOthers:
+       return 0x0;
+     case rocksdb::FlushReason::kGetLiveFiles:
+       return 0x1;
+     case rocksdb::FlushReason::kShutDown:
+       return 0x2;
+     case rocksdb::FlushReason::kExternalFileIngestion:
+       return 0x3;
+      case rocksdb::FlushReason::kManualCompaction:
+       return 0x4;
+      case rocksdb::FlushReason::kWriteBufferManager:
+       return 0x5;
+      case rocksdb::FlushReason::kWriteBufferFull:
+       return 0x6;
+      case rocksdb::FlushReason::kTest:
+       return 0x7;
+      case rocksdb::FlushReason::kDeleteFiles:
+       return 0x8;
+      case rocksdb::FlushReason::kAutoCompaction:
+       return 0x9;
+      case rocksdb::FlushReason::kManualFlush:
+       return 0xa;
+      case rocksdb::FlushReason::kErrorRecovery:
+       return 0xb;
+     default:
+       return 0x7F;  // undefined
+   }
+ }
 };
 
 class FlushJobInfoJni : public JavaClass {
@@ -7184,20 +7244,74 @@ class FlushJobInfoJni : public JavaClass {
    * nullptr if an an exception occurs
    */
   static jobject fromCppFlushJobInfo(JNIEnv* env,
-      const rocksdb::FlushJobInfo* /*flush_job_info*/) {
+      const rocksdb::FlushJobInfo* flush_job_info) {
     jclass jclazz = getJClass(env);
     if (jclazz == nullptr) {
       // exception occurred accessing class
       return nullptr;
     }
     
-    //TODO(AR) implement
-    return nullptr;
+    jmethodID mid_cstr = getConstructorMethodId(env, jclazz);
+    if (mid_cstr == nullptr) {
+      // exception occurred
+      return nullptr;
+    }
+
+    jbyteArray jcf_name = JniUtil::copyBytes(env, flush_job_info->cf_name);
+    if (jcf_name == nullptr) {
+      // exception occurred creating java byte array
+      return nullptr;
+    }
+
+    jstring jfile_path = JniUtil::toJavaString(env, &(flush_job_info->file_path));
+    if (jfile_path == nullptr) {
+      // exception occurred creating java string
+      env->DeleteLocalRef(jcf_name);
+      return nullptr;
+    }
+
+    jobject jtable_properties =
+        TablePropertiesJni::fromCppTableProperties(env, flush_job_info->table_properties);
+    if (jtable_properties == nullptr) {
+      // exception occurred creating java object
+      env->DeleteLocalRef(jcf_name);
+      env->DeleteLocalRef(jfile_path);
+      return nullptr;
+    }
+
+    jobject jflush_job_info = env->NewObject(jclazz, mid_cstr,
+        static_cast<jlong>(flush_job_info->cf_id),
+        jcf_name,
+        jfile_path,
+        static_cast<jlong>(flush_job_info->thread_id),
+        static_cast<jint>(flush_job_info->job_id),
+        flush_job_info->triggered_writes_slowdown ? JNI_TRUE : JNI_FALSE,
+        flush_job_info->triggered_writes_stop ? JNI_TRUE : JNI_FALSE,
+        static_cast<jlong>(flush_job_info->smallest_seqno),
+        static_cast<jlong>(flush_job_info->largest_seqno),
+        jtable_properties,
+        FlushReasonJni::toJavaFlushReason(flush_job_info->flush_reason)
+    );
+
+    env->DeleteLocalRef(jcf_name);
+    env->DeleteLocalRef(jfile_path);
+    env->DeleteLocalRef(jtable_properties);
+
+    return jflush_job_info;
   }
 
   static jclass getJClass(JNIEnv* env) {
     return JavaClass::getJClass(env, "org/rocksdb/FlushJobInfo");
   }
+
+  static jmethodID getConstructorMethodId(JNIEnv* env, jclass jclazz) {
+    static jmethodID mid =
+        env->GetMethodID(jclazz, "<init>",
+            "(J[BLjava/lang/String;JIZZJJLorg/rocksdb/TableProperties;B)V");
+    return mid;
+  }
 };
+
+
 }  // namespace rocksdb
 #endif  // JAVA_ROCKSJNI_PORTAL_H_
