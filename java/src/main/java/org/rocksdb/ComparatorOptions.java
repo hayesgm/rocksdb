@@ -130,4 +130,11 @@ public class ComparatorOptions extends RocksObject {
   private native void setMaxReusedBufferSize(final long handle,
       final int maxReuseBufferSize);
   @Override protected final native void disposeInternal(final long handle);
+
+  // TODO(AR) temp
+
+  @Override
+  protected void finalize() throws Throwable {
+    // no op!
+  }
 }
