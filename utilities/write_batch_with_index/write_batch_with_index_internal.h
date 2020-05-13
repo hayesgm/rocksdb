@@ -128,6 +128,7 @@ typedef SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&> WriteB
 
 class WBWIIteratorImpl : public WBWIIterator {
   public:
+  enum Result { kFound, kDeleted, kNotFound, kMergeInProgress, kError };
   WBWIIteratorImpl(uint32_t column_family_id,
                    WriteBatchEntrySkipList* skip_list,
                    const ReadableWriteBatch* write_batch,
@@ -193,6 +194,26 @@ class WBWIIteratorImpl : public WBWIIterator {
   }
 
   bool MatchesKey(uint32_t cf_id, const Slice& key);
+  // Moves the to first entry of the previous key.
+  void PrevKey();
+  // Moves the to first entry of the next key.
+  void NextKey();
+
+  // Moves the iterator to the Update (Put or Delete) for the current key
+  // If there are no Put/Delete, the Iterator will point to the first entry for
+  // this key
+  // @return kFound if a Put was found for the key
+  // @return kDeleted if a delete was found for the key
+  // @return kMergeInProgress if only merges were fouund for the key
+  // @return kError if an unsupported operation was found for the key
+  // @return kNotFound if no operations were found for this key
+  //
+  Result FindLatestUpdate(const Slice& key, MergeContext* merge_context);
+  Result FindLatestUpdate(MergeContext* merge_context);
+
+ protected:
+  void AdvanceKey(bool forward);
+
  private:
   uint32_t column_family_id_;
   WriteBatchEntrySkipList::Iterator skip_list_iter_;
@@ -208,7 +229,6 @@ class WriteBatchWithIndexInternal {
                               ColumnFamilyHandle* column_family = nullptr);
   WriteBatchWithIndexInternal(ColumnFamilyHandle* column_family = nullptr);
 
-  enum Result { kFound, kDeleted, kNotFound, kMergeInProgress, kError };
 
   // If batch contains a value for key, store it in *value and return kFound.
   // If batch contains a deletion for key, return Deleted.
@@ -218,16 +238,27 @@ class WriteBatchWithIndexInternal {
   //   and return kMergeInProgress
   // If batch does not contain this key, return kNotFound
   // Else, return kError on error with error Status stored in *s.
-  Result GetFromBatch(WriteBatchWithIndex* batch, const Slice& key,
-                      MergeContext* merge_context, std::string* value,
-                      bool overwrite_key, Status* s);
-  Status MergeKey(const Slice& key, const Slice* value, MergeContext& context,
-                  std::string* result, Slice* result_operand = nullptr);
+  WBWIIteratorImpl::Result GetFromBatch(WriteBatchWithIndex* batch,
+                                        const Slice& key, std::string* value,
+                                        Status* s);
+  WBWIIteratorImpl::Result GetFromBatch(WriteBatchWithIndex* batch,
+                                        const Slice& key,
+                                        MergeContext* merge_context,
+                                        std::string* value, Status* s);
+  Status MergeKey(const Slice& key, const Slice* value, std::string* result,
+                  Slice* result_operand = nullptr) const;
+  Status MergeKey(const Slice& key, const Slice* value,
+                  const MergeContext& merge_context, std::string* result,
+                  Slice* result_operand = nullptr) const;
+  size_t GetNumOperands() const { return merge_context_.GetNumOperands(); }
+  MergeContext* GetMergeContext() { return &merge_context_; }
+  Slice GetOperand(int index) const { return merge_context_.GetOperand(index); }
 
  private:
   DB* db_;  // Not owned
   const DBOptions* db_options_;
   ColumnFamilyHandle* column_family_;
+  MergeContext merge_context_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

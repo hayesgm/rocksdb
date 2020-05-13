@@ -32,10 +32,12 @@ namespace ROCKSDB_NAMESPACE {
 // * equal_keys_ <=> base_iterator == delta_iterator
 class BaseDeltaIterator : public Iterator {
  public:
-  BaseDeltaIterator(Iterator* base_iterator, WBWIIterator* delta_iterator,
+  BaseDeltaIterator(DB* db, ColumnFamilyHandle* column_family,
+                    Iterator* base_iterator, WBWIIteratorImpl* delta_iterator,
                     const Comparator* comparator,
                     const ReadOptions* read_options = nullptr)
-      : forward_(true),
+      : wbwii_(db, column_family),
+        forward_(true),
         current_at_base_(true),
         equal_keys_(false),
         status_(Status::OK()),
@@ -158,8 +160,43 @@ class BaseDeltaIterator : public Iterator {
   }
 
   Slice value() const override {
-    return current_at_base_ ? base_iterator_->value()
-                            : delta_iterator_->Entry().value;
+    if (current_at_base_) {
+      return base_iterator_->value();
+    } else {
+      WriteEntry delta_entry = delta_iterator_->Entry();
+      if (wbwii_.GetNumOperands() == 0) {
+        return delta_entry.value;
+      } else if (wbwii_.GetNumOperands() == 1) {
+        // Special case one operand if we can avoid a merge
+        if (delta_entry.type == kDeleteRecord ||
+            delta_entry.type == kSingleDeleteRecord) {
+          // A delete with a single merge is the merge result
+          return wbwii_.GetOperand(0);
+        } else if (delta_entry.type == kMergeRecord && !equal_keys_) {
+          // A single merge against an empty origin is the merge
+          return wbwii_.GetOperand(0);
+        }
+      }
+      if (delta_entry.type == kDeleteRecord ||
+          delta_entry.type == kSingleDeleteRecord) {
+        status_ =
+            wbwii_.MergeKey(delta_entry.key, nullptr, merge_result_.GetSelf());
+      } else if (delta_entry.type == kPutRecord) {
+        status_ = wbwii_.MergeKey(delta_entry.key, &delta_entry.value,
+                                  merge_result_.GetSelf());
+      } else if (delta_entry.type == kMergeRecord) {
+        if (equal_keys_) {
+          Slice base_value = base_iterator_->value();
+          status_ = wbwii_.MergeKey(delta_entry.key, &base_value,
+                                    merge_result_.GetSelf());
+        } else {
+          status_ = wbwii_.MergeKey(delta_entry.key, nullptr,
+                                    merge_result_.GetSelf());
+        }
+      }
+      merge_result_.PinSelf();
+      return merge_result_;
+    }
   }
 
   Status status() const override {
@@ -241,9 +278,9 @@ class BaseDeltaIterator : public Iterator {
 
   void AdvanceDelta() {
     if (forward_) {
-      delta_iterator_->Next();
+      delta_iterator_->NextKey();
     } else {
-      delta_iterator_->Prev();
+      delta_iterator_->PrevKey();
     }
   }
   void AdvanceBase() {
@@ -260,9 +297,12 @@ class BaseDeltaIterator : public Iterator {
 #ifndef __clang_analyzer__
     status_ = Status::OK();
     while (true) {
+      auto delta_result = WBWIIteratorImpl::kNotFound;
       WriteEntry delta_entry;
       if (DeltaValid()) {
         assert(delta_iterator_->status().ok());
+        delta_result =
+            delta_iterator_->FindLatestUpdate(wbwii_.GetMergeContext());
         delta_entry = delta_iterator_->Entry();
       } else if (!delta_iterator_->status().ok()) {
         // Expose the error status and stop.
@@ -289,8 +329,8 @@ class BaseDeltaIterator : public Iterator {
             return;
           }
         }
-        if (delta_entry.type == kDeleteRecord ||
-            delta_entry.type == kSingleDeleteRecord) {
+        if (delta_result == WBWIIteratorImpl::kDeleted &&
+            wbwii_.GetNumOperands() == 0) {
           AdvanceDelta();
         } else {
           current_at_base_ = false;
@@ -308,8 +348,8 @@ class BaseDeltaIterator : public Iterator {
           if (compare == 0) {
             equal_keys_ = true;
           }
-          if (delta_entry.type != kDeleteRecord &&
-              delta_entry.type != kSingleDeleteRecord) {
+          if (delta_result != WBWIIteratorImpl::kDeleted ||
+              wbwii_.GetNumOperands() > 0) {
             current_at_base_ = false;
             return;
           }
@@ -329,14 +369,16 @@ class BaseDeltaIterator : public Iterator {
 #endif  // __clang_analyzer__
   }
 
+  WriteBatchWithIndexInternal wbwii_;
   bool forward_;
   bool current_at_base_;
   bool equal_keys_;
-  Status status_;
+  mutable Status status_;
   std::unique_ptr<Iterator> base_iterator_;
-  std::unique_ptr<WBWIIterator> delta_iterator_;
+  std::unique_ptr<WBWIIteratorImpl> delta_iterator_;
   const Comparator* comparator_;  // not owned
   const Slice* iterate_upper_bound_;
+  mutable PinnableSlice merge_result_;
 };
 
 struct WriteBatchWithIndex::Rep {
@@ -567,25 +609,34 @@ WBWIIterator* WriteBatchWithIndex::NewIterator(
                               &(rep->comparator));
 }
 
-Iterator* WriteBatchWithIndex::NewIteratorWithBase(
-    ColumnFamilyHandle* column_family, Iterator* base_iterator,
-    const ReadOptions* read_options) {
-  if (rep->overwrite_key == false) {
-    assert(false);
-    return nullptr;
-  }
-  return new BaseDeltaIterator(base_iterator, NewIterator(column_family),
-                               GetColumnFamilyUserComparator(column_family),
-                               read_options);
+Iterator* WriteBatchWithIndex::NewIteratorWithBase(DB* db,
+                                                   Iterator* base_iterator,
+                                                   const ReadOptions* opts) {
+  return NewIteratorWithBase(db, db->DefaultColumnFamily(), base_iterator,
+                             opts);
 }
 
+Iterator* WriteBatchWithIndex::NewIteratorWithBase(
+    ColumnFamilyHandle* column_family, Iterator* base_iterator,
+    const ReadOptions* opts) {
+  return NewIteratorWithBase(nullptr, column_family, base_iterator, opts);
+}
+
+Iterator* WriteBatchWithIndex::NewIteratorWithBase(
+    DB* db, ColumnFamilyHandle* column_family, Iterator* base_iterator,
+    const ReadOptions* opts) {
+  auto wbwiii =
+      new WBWIIteratorImpl(GetColumnFamilyID(column_family), &(rep->skip_list),
+                           &rep->write_batch, &rep->comparator);
+  return new BaseDeltaIterator(db, column_family, base_iterator, wbwiii,
+                               GetColumnFamilyUserComparator(column_family),
+                               opts);
+}
 Iterator* WriteBatchWithIndex::NewIteratorWithBase(Iterator* base_iterator) {
-  if (rep->overwrite_key == false) {
-    assert(false);
-    return nullptr;
-  }
   // default column family's comparator
-  return new BaseDeltaIterator(base_iterator, NewIterator(),
+  auto wbwiii = new WBWIIteratorImpl(0, &(rep->skip_list), &rep->write_batch,
+                                     &rep->comparator);
+  return new BaseDeltaIterator(nullptr, nullptr, base_iterator, wbwiii,
                                rep->comparator.default_comparator());
 }
 
@@ -675,20 +726,18 @@ Status WriteBatchWithIndex::GetFromBatch(ColumnFamilyHandle* column_family,
                                          const DBOptions& options,
                                          const Slice& key, std::string* value) {
   Status s;
-  MergeContext merge_context;
   WriteBatchWithIndexInternal wbwii(&options, column_family);
-  auto result = wbwii.GetFromBatch(this, key, &merge_context, value,
-                                   rep->overwrite_key, &s);
+  auto result = wbwii.GetFromBatch(this, key, value, &s);
   switch (result) {
-    case WriteBatchWithIndexInternal::Result::kFound:
-    case WriteBatchWithIndexInternal::Result::kError:
+    case WBWIIteratorImpl::kFound:
+    case WBWIIteratorImpl::kError:
       // use returned status
       break;
-    case WriteBatchWithIndexInternal::Result::kDeleted:
-    case WriteBatchWithIndexInternal::Result::kNotFound:
+    case WBWIIteratorImpl::kDeleted:
+    case WBWIIteratorImpl::kNotFound:
       s = Status::NotFound();
       break;
-    case WriteBatchWithIndexInternal::Result::kMergeInProgress:
+    case WBWIIteratorImpl::kMergeInProgress:
       s = Status::MergeInProgress();
       break;
     default:
@@ -750,27 +799,25 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const Slice& key, PinnableSlice* pinnable_val, ReadCallback* callback) {
   Status s;
- MergeContext merge_context;
  WriteBatchWithIndexInternal wbwii(db, column_family);
 
  // Since the lifetime of the WriteBatch is the same as that of the transaction
  // we cannot pin it as otherwise the returned value will not be available
  // after the transaction finishes.
  std::string& batch_value = *pinnable_val->GetSelf();
- auto result = wbwii.GetFromBatch(this, key, &merge_context, &batch_value,
-                                  rep->overwrite_key, &s);
+ auto result = wbwii.GetFromBatch(this, key, &batch_value, &s);
 
- if (result == WriteBatchWithIndexInternal::Result::kFound) {
+ if (result == WBWIIteratorImpl::kFound) {
    pinnable_val->PinSelf();
    return s;
  }
-  if (result == WriteBatchWithIndexInternal::Result::kDeleted) {
+  if (result == WBWIIteratorImpl::kDeleted) {
     return Status::NotFound();
   }
-  if (result == WriteBatchWithIndexInternal::Result::kError) {
+  if (result == WBWIIteratorImpl::kError) {
     return s;
   }
-  if (result == WriteBatchWithIndexInternal::Result::kMergeInProgress &&
+  if (result == WBWIIteratorImpl::kMergeInProgress &&
       rep->overwrite_key == true) {
     // Since we've overwritten keys, we do not know what other operations are
     // in this batch for this key, so we cannot do a Merge to compute the
@@ -778,8 +825,8 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
     return Status::MergeInProgress();
   }
 
-  assert(result == WriteBatchWithIndexInternal::Result::kMergeInProgress ||
-         result == WriteBatchWithIndexInternal::Result::kNotFound);
+  assert(result == WBWIIteratorImpl::kMergeInProgress ||
+         result == WBWIIteratorImpl::kNotFound);
 
   // Did not find key in batch OR could not resolve Merges.  Try DB.
   if (!callback) {
@@ -794,13 +841,13 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
   }
 
   if (s.ok() || s.IsNotFound()) {  // DB Get Succeeded
-    if (result == WriteBatchWithIndexInternal::Result::kMergeInProgress) {
+    if (result == WBWIIteratorImpl::kMergeInProgress) {
       // Merge result from DB with merges in Batch
       std::string merge_result;
       if (s.ok()) {
-        s = wbwii.MergeKey(key, pinnable_val, merge_context, &merge_result);
+        s = wbwii.MergeKey(key, pinnable_val, &merge_result);
       } else {  // Key not present in db (s.IsNotFound())
-        s = wbwii.MergeKey(key, nullptr, merge_context, &merge_result);
+        s = wbwii.MergeKey(key, nullptr, &merge_result);
       }
       if (s.ok()) {
         pinnable_val->Reset();
@@ -829,7 +876,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
   autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
   autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
   // To hold merges from the write batch
-  autovector<std::pair<WriteBatchWithIndexInternal::Result, MergeContext>,
+  autovector<std::pair<WBWIIteratorImpl::Result, MergeContext>,
              MultiGetContext::MAX_BATCH_SIZE>
       merges;
   // Since the lifetime of the WriteBatch is the same as that of the transaction
@@ -840,21 +887,21 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     PinnableSlice* pinnable_val = &values[i];
     std::string& batch_value = *pinnable_val->GetSelf();
     Status* s = &statuses[i];
-    auto result = wbwii.GetFromBatch(this, keys[i], &merge_context,
-                                     &batch_value, rep->overwrite_key, s);
+    auto result =
+        wbwii.GetFromBatch(this, keys[i], &merge_context, &batch_value, s);
 
-    if (result == WriteBatchWithIndexInternal::Result::kFound) {
+    if (result == WBWIIteratorImpl::kFound) {
       pinnable_val->PinSelf();
       continue;
     }
-    if (result == WriteBatchWithIndexInternal::Result::kDeleted) {
+    if (result == WBWIIteratorImpl::kDeleted) {
       *s = Status::NotFound();
       continue;
     }
-    if (result == WriteBatchWithIndexInternal::Result::kError) {
+    if (result == WBWIIteratorImpl::kError) {
       continue;
     }
-    if (result == WriteBatchWithIndexInternal::Result::kMergeInProgress &&
+    if (result == WBWIIteratorImpl::kMergeInProgress &&
         rep->overwrite_key == true) {
       // Since we've overwritten keys, we do not know what other operations are
       // in this batch for this key, so we cannot do a Merge to compute the
@@ -863,8 +910,8 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
       continue;
     }
 
-    assert(result == WriteBatchWithIndexInternal::Result::kMergeInProgress ||
-           result == WriteBatchWithIndexInternal::Result::kNotFound);
+    assert(result == WBWIIteratorImpl::kMergeInProgress ||
+           result == WBWIIteratorImpl::kNotFound);
     key_context.emplace_back(column_family, keys[i], &values[i],
                              /*timestamp*/ nullptr, &statuses[i]);
     merges.emplace_back(result, std::move(merge_context));
@@ -885,10 +932,9 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     KeyContext& key = *iter;
     if (key.s->ok() || key.s->IsNotFound()) {  // DB Get Succeeded
       size_t index = iter - key_context.begin();
-      std::pair<WriteBatchWithIndexInternal::Result, MergeContext>&
-          merge_result = merges[index];
-      if (merge_result.first ==
-          WriteBatchWithIndexInternal::Result::kMergeInProgress) {
+      std::pair<WBWIIteratorImpl::Result, MergeContext>& merge_result =
+          merges[index];
+      if (merge_result.first == WBWIIteratorImpl::kMergeInProgress) {
         // Merge result from DB with merges in Batch
         Slice* merge_data;
         if (key.s->ok()) {

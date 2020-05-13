@@ -178,6 +178,105 @@ bool WBWIIteratorImpl::MatchesKey(uint32_t cf_id, const Slice& key) {
   }
 }
 
+void WBWIIteratorImpl::AdvanceKey(bool forward) {
+  if (Valid()) {
+    Slice key = Entry().key;
+    do {
+      if (forward) {
+        Next();
+      } else {
+        Prev();
+      }
+    } while (MatchesKey(column_family_id_, key));
+  }
+}
+
+void WBWIIteratorImpl::NextKey() { AdvanceKey(true); }
+
+void WBWIIteratorImpl::PrevKey() {
+  AdvanceKey(false);  // Move to the tail of the previous key
+  if (Valid()) {
+    AdvanceKey(false);  // Move back another key.  Now we are at the start of
+                        // the previous key
+    if (Valid()) {      // Still a valid
+      Next();           // Move forward one onto this key
+    } else {
+      SeekToFirst();  // Not valid, move to the start
+    }
+  }
+}
+
+WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
+    MergeContext* merge_context) {
+  if (Valid()) {
+    Slice key = Entry().key;
+    return FindLatestUpdate(key, merge_context);
+  } else {
+    merge_context->Clear();  // Clear any entries in the MergeContext
+    return WBWIIteratorImpl::kNotFound;
+  }
+}
+
+WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
+    const Slice& key, MergeContext* merge_context) {
+  Result result = WBWIIteratorImpl::kNotFound;
+  merge_context->Clear();  // Clear any entries in the MergeContext
+  // TODO(agiardullo): consider adding support for reverse iteration
+  if (!Valid()) {
+    return result;
+  } else if (comparator_->CompareKey(column_family_id_, Entry().key, key) !=
+             0) {
+    return result;
+  } else {
+    // We want to iterate in the reverse order that the writes were added to the
+    // batch.  Since we don't have a reverse iterator, we must seek past the
+    // end. We do this by seeking to the next key, and then back one step
+    NextKey();
+    if (Valid()) {
+      Prev();
+    } else {
+      SeekToLast();
+    }
+
+    // We are at the end of the iterator for this key.  Search backwards for the
+    // last Put or Delete, accumulating merges along the way.
+    while (Valid()) {
+      const WriteEntry entry = Entry();
+      if (comparator_->CompareKey(column_family_id_, entry.key, key) != 0) {
+        break;  // Unexpected error or we've reached a different next key
+      }
+
+      switch (entry.type) {
+        case kPutRecord:
+          return WBWIIteratorImpl::kFound;
+        case kDeleteRecord:
+          return WBWIIteratorImpl::kDeleted;
+        case kSingleDeleteRecord:
+          return WBWIIteratorImpl::kDeleted;
+        case kMergeRecord:
+          result = WBWIIteratorImpl::kMergeInProgress;
+          merge_context->PushOperand(entry.value);
+          break;
+        case kLogDataRecord:
+          break;  // ignore
+        case kXIDRecord:
+          break;  // ignore
+        default:
+          return WBWIIteratorImpl::kError;
+      }  // end switch statement
+      Prev();
+    }  // End while Valid()
+    // At this point, we have been through the whole list and found no Puts or
+    // Deletes. The iterator points to the previous key.  Move the iterator back
+    // onto this one.
+    if (Valid()) {
+      Next();
+    } else {
+      SeekToFirst();
+    }
+  }
+  return result;
+}
 WriteBatchWithIndexInternal::WriteBatchWithIndexInternal(
     DB* db, ColumnFamilyHandle* column_family)
     : db_(db), db_options_(nullptr), column_family_(column_family) {
@@ -196,9 +295,16 @@ WriteBatchWithIndexInternal::WriteBatchWithIndexInternal(
 
 Status WriteBatchWithIndexInternal::MergeKey(const Slice& key,
                                              const Slice* value,
-                                             MergeContext& merge_context,
                                              std::string* result,
-                                             Slice* result_operand) {
+                                             Slice* result_operand) const {
+  return MergeKey(key, value, merge_context_, result, result_operand);
+}
+
+Status WriteBatchWithIndexInternal::MergeKey(const Slice& key,
+                                             const Slice* value,
+                                             const MergeContext& context,
+                                             std::string* result,
+                                             Slice* result_operand) const {
   if (column_family_ != nullptr) {
     auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family_);
     const auto merge_operator = cfh->cfd()->ioptions()->merge_operator;
@@ -213,131 +319,68 @@ Status WriteBatchWithIndexInternal::MergeKey(const Slice& key,
       Env* env = immutable_db_options.env;
       Logger* logger = immutable_db_options.info_log.get();
 
-      return MergeHelper::TimedFullMerge(
-          merge_operator, key, value, merge_context.GetOperands(), result,
-          logger, statistics, env, result_operand);
+      return MergeHelper::TimedFullMerge(merge_operator, key, value,
+                                         context.GetOperands(), result, logger,
+                                         statistics, env, result_operand);
     } else if (db_options_ != nullptr) {
       Statistics* statistics = db_options_->statistics.get();
       Env* env = db_options_->env;
       Logger* logger = db_options_->info_log.get();
-      return MergeHelper::TimedFullMerge(
-          merge_operator, key, value, merge_context.GetOperands(), result,
-          logger, statistics, env, result_operand);
+      return MergeHelper::TimedFullMerge(merge_operator, key, value,
+                                         context.GetOperands(), result, logger,
+                                         statistics, env, result_operand);
     } else {
       return MergeHelper::TimedFullMerge(
-          merge_operator, key, value, merge_context.GetOperands(), result,
-          nullptr, nullptr, Env::Default(), result_operand);
+          merge_operator, key, value, context.GetOperands(), result, nullptr,
+          nullptr, Env::Default(), result_operand);
     }
   } else {
     return Status::InvalidArgument("Must provide a column_family");
   }
 }
 
-WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
-    WriteBatchWithIndex* batch, const Slice& key, MergeContext* merge_context,
-    std::string* value, bool overwrite_key, Status* s) {
-  uint32_t cf_id = GetColumnFamilyID(column_family_);
-  *s = Status::OK();
-  Result result = kNotFound;
+WBWIIteratorImpl::Result WriteBatchWithIndexInternal::GetFromBatch(
+    WriteBatchWithIndex* batch, const Slice& key, std::string* value,
+    Status* s) {
+  return GetFromBatch(batch, key, &merge_context_, value, s);
+}
 
+WBWIIteratorImpl::Result WriteBatchWithIndexInternal::GetFromBatch(
+    WriteBatchWithIndex* batch, const Slice& key, MergeContext* context,
+    std::string* value, Status* s) {
+  *s = Status::OK();
   std::unique_ptr<WBWIIteratorImpl> iter(
       static_cast<WBWIIteratorImpl*>(batch->NewIterator(column_family_)));
 
-  // We want to iterate in the reverse order that the writes were added to the
-  // batch.  Since we don't have a reverse iterator, we must seek past the end.
-  // TODO(agiardullo): consider adding support for reverse iteration
+  // Search the iterator for this key, and updates/merges to it.
   iter->Seek(key);
-  while (iter->Valid() && iter->MatchesKey(cf_id, key)) {
-    iter->Next();
-  }
-
-  if (!(*s).ok()) {
-    return WriteBatchWithIndexInternal::kError;
-  }
-
-  if (!iter->Valid()) {
-    // Read past end of results.  Reposition on last result.
-    iter->SeekToLast();
-  } else {
-    iter->Prev();
-  }
-
-  Slice entry_value;
-  while (iter->Valid()) {
-    if (!iter->MatchesKey(cf_id, key)) {
-      // Unexpected error or we've reached a different next key
-      break;
+  auto result = iter->FindLatestUpdate(key, context);
+  if (result == WBWIIteratorImpl::kError) {
+    (*s) = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
+                              ToString(iter->Entry().type));
+    return result;
+  } else if (result == WBWIIteratorImpl::kNotFound) {
+    return result;
+  } else if (result == WBWIIteratorImpl::Result::kFound) {  // PUT
+    Slice entry_value = iter->Entry().value;
+    if (context->GetNumOperands() > 0) {
+      *s = MergeKey(key, &entry_value, *context, value);
+      if (!s->ok()) {
+        result = WBWIIteratorImpl::Result::kError;
+      }
+    } else {
+      value->assign(entry_value.data(), entry_value.size());
     }
-    const WriteEntry entry = iter->Entry();
-
-    switch (entry.type) {
-      case kPutRecord: {
-        result = WriteBatchWithIndexInternal::Result::kFound;
-        entry_value = entry.value;
-        break;
-      }
-      case kMergeRecord: {
-        result = WriteBatchWithIndexInternal::Result::kMergeInProgress;
-        merge_context->PushOperand(entry.value);
-        break;
-      }
-      case kDeleteRecord:
-      case kSingleDeleteRecord: {
-        result = WriteBatchWithIndexInternal::Result::kDeleted;
-        break;
-      }
-      case kLogDataRecord:
-      case kXIDRecord: {
-        // ignore
-        break;
-      }
-      default: {
-        result = WriteBatchWithIndexInternal::Result::kError;
-        (*s) = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
-                                  ToString(entry.type));
-        break;
-      }
-    }
-    if (result == WriteBatchWithIndexInternal::Result::kFound ||
-        result == WriteBatchWithIndexInternal::Result::kDeleted ||
-        result == WriteBatchWithIndexInternal::Result::kError) {
-      // We can stop iterating once we find a PUT or DELETE
-      break;
-    }
-    if (result == WriteBatchWithIndexInternal::Result::kMergeInProgress &&
-        overwrite_key == true) {
-      // Since we've overwritten keys, we do not know what other operations are
-      // in this batch for this key, so we cannot do a Merge to compute the
-      // result.  Instead, we will simply return MergeInProgress.
-      break;
-    }
-
-    iter->Prev();
-  }
-
-  if ((*s).ok()) {
-    if (result == WriteBatchWithIndexInternal::Result::kFound ||
-        result == WriteBatchWithIndexInternal::Result::kDeleted) {
-      // Found a Put or Delete.  Merge if necessary.
-      if (merge_context->GetNumOperands() > 0) {
-        if (result == WriteBatchWithIndexInternal::Result::kFound) {
-          *s = MergeKey(key, &entry_value, *merge_context, value);
-        } else {
-          *s = MergeKey(key, nullptr, *merge_context, value);
-        }
-        if ((*s).ok()) {
-          result = WriteBatchWithIndexInternal::Result::kFound;
-        } else {
-          result = WriteBatchWithIndexInternal::Result::kError;
-        }
-      } else {  // nothing to merge
-        if (result == WriteBatchWithIndexInternal::Result::kFound) {  // PUT
-          value->assign(entry_value.data(), entry_value.size());
-        }
+  } else if (result == WBWIIteratorImpl::kDeleted) {
+    if (context->GetNumOperands() > 0) {
+      *s = MergeKey(key, nullptr, *context, value);
+      if (s->ok()) {
+        result = WBWIIteratorImpl::Result::kFound;
+      } else {
+        result = WBWIIteratorImpl::Result::kError;
       }
     }
   }
-
   return result;
 }
 
