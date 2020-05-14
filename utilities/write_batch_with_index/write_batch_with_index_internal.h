@@ -124,10 +124,11 @@ class WriteBatchEntryComparator {
   const ReadableWriteBatch* write_batch_;
 };
 
-typedef SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&> WriteBatchEntrySkipList;
+typedef SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&>
+    WriteBatchEntrySkipList;
 
 class WBWIIteratorImpl : public WBWIIterator {
-  public:
+ public:
   enum Result { kFound, kDeleted, kNotFound, kMergeInProgress, kError };
   WBWIIteratorImpl(uint32_t column_family_id,
                    WriteBatchEntrySkipList* skip_list,
@@ -148,14 +149,14 @@ class WBWIIteratorImpl : public WBWIIterator {
     return (iter_entry != nullptr &&
             iter_entry->column_family == column_family_id_);
   }
-  
+
   void SeekToFirst() override {
     WriteBatchIndexEntry search_entry(
         nullptr /* search_key */, column_family_id_,
         true /* is_forward_direction */, true /* is_seek_to_first */);
     skip_list_iter_.Seek(&search_entry);
   }
-  
+
   void SeekToLast() override {
     WriteBatchIndexEntry search_entry(
         nullptr /* search_key */, column_family_id_ + 1,
@@ -179,7 +180,7 @@ class WBWIIteratorImpl : public WBWIIterator {
                                       false /* is_seek_to_first */);
     skip_list_iter_.SeekForPrev(&search_entry);
   }
-  
+
   void Next() override { skip_list_iter_.Next(); }
   void Prev() override { skip_list_iter_.Prev(); }
   WriteEntry Entry() const override;
@@ -228,7 +229,6 @@ class WriteBatchWithIndexInternal {
   WriteBatchWithIndexInternal(const DBOptions* db_options,
                               ColumnFamilyHandle* column_family = nullptr);
   WriteBatchWithIndexInternal(ColumnFamilyHandle* column_family = nullptr);
-
 
   // If batch contains a value for key, store it in *value and return kFound.
   // If batch contains a deletion for key, return Deleted.

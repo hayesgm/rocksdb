@@ -153,7 +153,6 @@ int WriteBatchEntryComparator::CompareKey(uint32_t column_family,
   }
 }
 
-
 WriteEntry WBWIIteratorImpl::Entry() const {
   WriteEntry ret;
   Slice blob, xid;
@@ -162,7 +161,7 @@ WriteEntry WBWIIteratorImpl::Entry() const {
   assert(iter_entry != nullptr &&
          iter_entry->column_family == column_family_id_);
   auto s = write_batch_->GetEntryFromDataOffset(
-        iter_entry->offset, &ret.type, &ret.key, &ret.value, &blob, &xid);
+      iter_entry->offset, &ret.type, &ret.key, &ret.value, &blob, &xid);
   assert(s.ok());
   assert(ret.type == kPutRecord || ret.type == kDeleteRecord ||
          ret.type == kSingleDeleteRecord || ret.type == kDeleteRangeRecord ||

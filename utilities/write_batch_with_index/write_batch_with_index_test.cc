@@ -635,8 +635,8 @@ TEST_F(WBWIOverwriteTest, TestOverwriteKey) {
   ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator());
   ColumnFamilyHandleImplDummy cf2(88, BytewiseComparator());
 
-  batch_->Put(&cf1, "ddd", "");
   batch_->Merge(&cf1, "ddd", "");
+  batch_->Put(&cf1, "ddd", "");
   batch_->Delete(&cf1, "ddd");
   batch_->Put(&cf2, "aaa", "");
   batch_->Delete(&cf2, "aaa");
@@ -1175,7 +1175,7 @@ TEST_P(WriteBatchWithIndexTest, TestGetFromBatch) {
   ASSERT_EQ("b", value);
 }
 
-TEST_F(WBWIKeepTest, TestGetFromBatchMerge) {
+TEST_P(WriteBatchWithIndexTest, TestGetFromBatchMerge) {
   Status s = OpenDB();
   ASSERT_OK(s);
 
@@ -1233,11 +1233,13 @@ TEST_F(WBWIOverwriteTest, TestGetFromBatchMerge2) {
 
   batch_->Merge(column_family, "X", "aaa");
   s = batch_->GetFromBatch(column_family, options_, "X", &value);
-  ASSERT_TRUE(s.IsMergeInProgress());
+  ASSERT_OK(s);
+  ASSERT_EQ("x2,aaa", value);
 
   batch_->Merge(column_family, "X", "bbb");
   s = batch_->GetFromBatch(column_family, options_, "X", &value);
-  ASSERT_TRUE(s.IsMergeInProgress());
+  ASSERT_OK(s);
+  ASSERT_EQ("x2,aaa,bbb", value);
 
   batch_->Put(column_family, "X", "x3");
   s = batch_->GetFromBatch(column_family, options_, "X", &value);
@@ -1246,7 +1248,8 @@ TEST_F(WBWIOverwriteTest, TestGetFromBatchMerge2) {
 
   batch_->Merge(column_family, "X", "ccc");
   s = batch_->GetFromBatch(column_family, options_, "X", &value);
-  ASSERT_TRUE(s.IsMergeInProgress());
+  ASSERT_OK(s);
+  ASSERT_EQ("x3,ccc", value);
 
   batch_->Delete(column_family, "X");
   s = batch_->GetFromBatch(column_family, options_, "X", &value);
@@ -1254,7 +1257,8 @@ TEST_F(WBWIOverwriteTest, TestGetFromBatchMerge2) {
 
   batch_->Merge(column_family, "X", "ddd");
   s = batch_->GetFromBatch(column_family, options_, "X", &value);
-  ASSERT_TRUE(s.IsMergeInProgress());
+  ASSERT_OK(s);
+  ASSERT_EQ("ddd", value);
 }
 
 TEST_P(WriteBatchWithIndexTest, TestGetFromBatchAndDB) {
@@ -1289,7 +1293,7 @@ TEST_P(WriteBatchWithIndexTest, TestGetFromBatchAndDB) {
   ASSERT_TRUE(s.IsNotFound());
 }
 
-TEST_F(WBWIKeepTest, TestGetFromBatchAndDBMerge) {
+TEST_P(WriteBatchWithIndexTest, TestGetFromBatchAndDBMerge) {
   Status s = OpenDB();
   assert(s.ok());
   std::string value;
@@ -1412,18 +1416,21 @@ TEST_F(WBWIOverwriteTest, TestGetFromBatchAndDBMerge2) {
   batch_->Merge("A", "xxx");
 
   s = batch_->GetFromBatchAndDB(db_, read_opts_, "A", &value);
-  ASSERT_TRUE(s.IsMergeInProgress());
+  ASSERT_OK(s);
+  ASSERT_EQ(value, "xxx");
 
   batch_->Merge("A", "yyy");
 
   s = batch_->GetFromBatchAndDB(db_, read_opts_, "A", &value);
-  ASSERT_TRUE(s.IsMergeInProgress());
+  ASSERT_OK(s);
+  ASSERT_EQ(value, "xxx,yyy");
 
   s = db_->Put(write_opts_, "A", "a0");
   ASSERT_OK(s);
 
   s = batch_->GetFromBatchAndDB(db_, read_opts_, "A", &value);
-  ASSERT_TRUE(s.IsMergeInProgress());
+  ASSERT_OK(s);
+  ASSERT_EQ(value, "a0,xxx,yyy");
 
   batch_->Delete("A");
 
@@ -1431,7 +1438,7 @@ TEST_F(WBWIOverwriteTest, TestGetFromBatchAndDBMerge2) {
   ASSERT_TRUE(s.IsNotFound());
 }
 
-TEST_F(WBWIKeepTest, TestGetFromBatchAndDBMerge3) {
+TEST_P(WriteBatchWithIndexTest, TestGetFromBatchAndDBMerge3) {
   Status s = OpenDB();
   assert(s.ok());
 
@@ -1827,7 +1834,7 @@ TEST_P(WriteBatchWithIndexTest, SingleDeleteDeltaIterTest) {
   ASSERT_EQ("B:b3,E:ee,", value);
 }
 
-TEST_F(WBWIKeepTest, MultiGetTest) {
+TEST_P(WriteBatchWithIndexTest, MultiGetTest) {
   Status s;
 
   // MultiGet a lot of keys in order to force std::vector reallocations
@@ -1904,7 +1911,7 @@ TEST_F(WBWIKeepTest, MultiGetTest) {
 }
 
 // This test has merges, but the merge does not play into the final result
-TEST_F(WBWIKeepTest, FakeMergeWithIteratorTest) {
+TEST_P(WriteBatchWithIndexTest, FakeMergeWithIteratorTest) {
   ASSERT_OK(OpenDB());
   ColumnFamilyHandle* cf0 = db_->DefaultColumnFamily();
 
@@ -1935,7 +1942,7 @@ TEST_F(WBWIKeepTest, FakeMergeWithIteratorTest) {
   AssertItersEqual(iter.get(), &kvi);
 }
 
-TEST_F(WBWIKeepTest, IteratorMergeTest) {
+TEST_P(WriteBatchWithIndexTest, IteratorMergeTest) {
   ASSERT_OK(OpenDB());
   ColumnFamilyHandle* cf0 = db_->DefaultColumnFamily();
 
@@ -1962,7 +1969,7 @@ TEST_F(WBWIKeepTest, IteratorMergeTest) {
   AssertItersEqual(iter.get(), &kvi);
 }
 
-TEST_F(WBWIKeepTest, IteratorDBMergeTest) {
+TEST_P(WriteBatchWithIndexTest, IteratorDBMergeTest) {
   ASSERT_OK(OpenDB());
   ColumnFamilyHandle* cf0 = db_->DefaultColumnFamily();
 
@@ -1989,7 +1996,7 @@ TEST_F(WBWIKeepTest, IteratorDBMergeTest) {
   AssertItersEqual(iter.get(), &kvi);
 }
 
-TEST_F(WBWIKeepTest, IteratorMergeTestWithOrig) {
+TEST_P(WriteBatchWithIndexTest, IteratorMergeTestWithOrig) {
   ASSERT_OK(OpenDB());
   ColumnFamilyHandle* cf0 = db_->DefaultColumnFamily();
   KVMap original;
@@ -2016,7 +2023,7 @@ TEST_F(WBWIKeepTest, IteratorMergeTestWithOrig) {
   AssertItersEqual(iter.get(), &kvi);
 }
 
-TEST_F(WBWIKeepTest, GetFromBatchAfterMerge) {
+TEST_P(WriteBatchWithIndexTest, GetFromBatchAfterMerge) {
   std::string value;
   Status s;
 
@@ -2036,7 +2043,7 @@ TEST_F(WBWIKeepTest, GetFromBatchAfterMerge) {
   ASSERT_EQ(value, "cc");
 }
 
-TEST_F(WBWIKeepTest, GetFromBatchAndDBAfterMerge) {
+TEST_P(WriteBatchWithIndexTest, GetFromBatchAndDBAfterMerge) {
   std::string value;
   Status s;
 
@@ -2076,7 +2083,7 @@ TEST_F(WBWIKeepTest, GetAfterPut) {
   ASSERT_EQ(value, "aa,bb,cc");
 }
 
-TEST_F(WBWIKeepTest, GetAfterMergePut) {
+TEST_P(WriteBatchWithIndexTest, GetAfterMergePut) {
   std::string value;
   ASSERT_OK(OpenDB());
   ColumnFamilyHandle* cf0 = db_->DefaultColumnFamily();
@@ -2107,7 +2114,7 @@ TEST_F(WBWIKeepTest, GetAfterMergePut) {
   ASSERT_EQ(value, "cc,dd");
 }
 
-TEST_F(WBWIKeepTest, GetAfterMergeDelete) {
+TEST_P(WriteBatchWithIndexTest, GetAfterMergeDelete) {
   std::string value;
   ASSERT_OK(OpenDB());
   ColumnFamilyHandle* cf0 = db_->DefaultColumnFamily();
