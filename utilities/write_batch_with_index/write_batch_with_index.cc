@@ -166,19 +166,8 @@ class BaseDeltaIterator : public Iterator {
       WriteEntry delta_entry = delta_iterator_->Entry();
       if (wbwii_.GetNumOperands() == 0) {
         return delta_entry.value;
-      } else if (wbwii_.GetNumOperands() == 1) {
-        // Special case one operand if we can avoid a merge
-        if (delta_entry.type == kDeleteRecord ||
-            delta_entry.type == kSingleDeleteRecord) {
-          // A delete with a single merge is the merge result
-          return wbwii_.GetOperand(0);
-        } else if (delta_entry.type == kMergeRecord && !equal_keys_) {
-          // A single merge against an empty origin is the merge
-          return wbwii_.GetOperand(0);
-        }
-      }
-      if (delta_entry.type == kDeleteRecord ||
-          delta_entry.type == kSingleDeleteRecord) {
+      } else if (delta_entry.type == kDeleteRecord ||
+                 delta_entry.type == kSingleDeleteRecord) {
         status_ =
             wbwii_.MergeKey(delta_entry.key, nullptr, merge_result_.GetSelf());
       } else if (delta_entry.type == kPutRecord) {
