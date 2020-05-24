@@ -17,6 +17,7 @@
 #include "db/column_family.h"
 #include "port/stack_trace.h"
 #include "test_util/testharness.h"
+#include "util/coding.h"
 #include "util/random.h"
 #include "util/string_util.h"
 #include "utilities/merge_operators.h"
@@ -239,9 +240,9 @@ void AssertIterEqual(WBWIIteratorImpl* wbwii,
 
 class WBWIBaseTest : public testing::Test {
  public:
-  WBWIBaseTest(bool overwrite) : db_(nullptr) {
+  WBWIBaseTest(bool overwrite, std::string merge_operator_name = "stringappend") : db_(nullptr) {
     options_.merge_operator =
-        MergeOperators::CreateFromStringId("stringappend");
+        MergeOperators::CreateFromStringId(merge_operator_name);
     options_.create_if_missing = true;
     dbname_ = test::PerThreadDBPath("write_batch_with_index_test");
     DestroyDB(dbname_, options_);
@@ -310,6 +311,12 @@ class WriteBatchWithIndexTest : public WBWIBaseTest,
                                 public testing::WithParamInterface<bool> {
  public:
   WriteBatchWithIndexTest() : WBWIBaseTest(GetParam()) {}
+};
+
+class WBWIRYOWIteratorMergeTest : public WBWIBaseTest,
+                                public testing::WithParamInterface<bool> {
+ public:
+  WBWIRYOWIteratorMergeTest() : WBWIBaseTest(GetParam(), "int64subtract") {}
 };
 
 void TestValueAsSecondaryIndexHelper(std::vector<Entry> entries,
@@ -2149,7 +2156,75 @@ TEST_P(WriteBatchWithIndexTest, GetAfterMergeDelete) {
   ASSERT_EQ(value, "cc,dd");
 }
 
+TEST_P(WBWIRYOWIteratorMergeTest, RYOWMergeNonEmptyDb) {
+  std::string value;
+
+  ASSERT_OK(OpenDB());
+  ColumnFamilyOptions cf_opts;
+  cf_opts.merge_operator = options_.merge_operator;
+  ColumnFamilyHandle* cf1;
+  Status s = db_->CreateColumnFamily(cf_opts, "cf1", &cf1);
+
+  PutVarsignedint64(&value, 0);
+  s = db_->Put(write_opts_, cf1, "key", value);  // Put 0 under key
+  ASSERT_OK(s);
+  
+  value.clear();
+
+  PutVarsignedint64(&value, 123);
+  s = batch_->Merge(cf1, "key", value);  // Merging 123 under key
+  ASSERT_OK(s);
+
+  Iterator* base_it = db_->NewIterator(read_opts_, cf1);
+  Iterator* ryow_it = batch_->NewIteratorWithBase(db_, cf1, base_it, &read_opts_);
+  ryow_it->Seek("key");
+  ASSERT_TRUE(ryow_it->Valid());
+  ASSERT_OK(ryow_it->status());
+  Slice read_slice = ryow_it->value();
+  // ASSERT_TRUE(read_slice.size() > 0);
+  int64_t read_value = 0;
+  const bool read_ok = GetVarsignedint64(&read_slice, &read_value);
+
+  db_->DropColumnFamily(cf1);
+  db_->DestroyColumnFamilyHandle(cf1);
+
+  ASSERT_TRUE(read_ok);
+  ASSERT_EQ(read_value, -123);  // Merge operators should have been applied on db contaning 0, and then subtracted 123.
+}
+
+TEST_P(WBWIRYOWIteratorMergeTest, RYOWMergeEmptyDb) {
+  std::string value;
+
+  ASSERT_OK(OpenDB());
+  ColumnFamilyOptions cf_opts;
+  cf_opts.merge_operator = options_.merge_operator;
+  ColumnFamilyHandle* cf1;
+  Status s = db_->CreateColumnFamily(cf_opts, "cf1", &cf1);
+
+  PutVarsignedint64(&value, 123);
+  s = batch_->Merge(cf1, "key", value);  // Merging 123 under key
+  ASSERT_OK(s);
+
+  Iterator* base_it = db_->NewIterator(read_opts_, cf1);
+  Iterator* ryow_it = batch_->NewIteratorWithBase(db_, cf1, base_it, &read_opts_);
+  ryow_it->Seek("key");
+  ASSERT_TRUE(ryow_it->Valid());
+  ASSERT_OK(ryow_it->status());
+  Slice read_slice = ryow_it->value();
+  ASSERT_TRUE(read_slice.size() > 0);
+  int64_t read_value = 0;
+  const bool read_ok = GetVarsignedint64(&read_slice, &read_value);
+
+  db_->DropColumnFamily(cf1);
+  db_->DestroyColumnFamilyHandle(cf1);
+
+  ASSERT_TRUE(read_ok);
+  ASSERT_EQ(read_value, -123);  // Merge operators should have been applied on empty db, i.e. 0 and then subtracted 123.
+}
+
 INSTANTIATE_TEST_CASE_P(WBWI, WriteBatchWithIndexTest, testing::Bool());
+INSTANTIATE_TEST_CASE_P(WBWI, WBWIRYOWIteratorMergeTest, testing::Bool());
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
