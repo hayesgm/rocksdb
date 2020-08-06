@@ -42,8 +42,7 @@ class BaseDeltaIterator : public Iterator {
         base_iterator_(base_iterator),
         delta_iterator_(delta_iterator),
         comparator_(comparator),
-        iterate_upper_bound_(read_options ? read_options->iterate_upper_bound
-                                          : nullptr) {}
+        read_options_(read_options) {}
 
   ~BaseDeltaIterator() override {}
 
@@ -282,8 +281,8 @@ class BaseDeltaIterator : public Iterator {
           // Finished
           return;
         }
-        if (iterate_upper_bound_) {
-          if (comparator_->Compare(delta_entry.key, *iterate_upper_bound_) >=
+        if (read_options_ != nullptr && read_options_->iterate_upper_bound != nullptr) {
+          if (comparator_->Compare(delta_entry.key, *(read_options_->iterate_upper_bound)) >=
               0) {
             // out of upper bound -> finished.
             return;
@@ -336,7 +335,7 @@ class BaseDeltaIterator : public Iterator {
   std::unique_ptr<Iterator> base_iterator_;
   std::unique_ptr<WBWIIterator> delta_iterator_;
   const Comparator* comparator_;  // not owned
-  const Slice* iterate_upper_bound_;
+  const ReadOptions* read_options_;  // not owned
 };
 
 typedef SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&>
