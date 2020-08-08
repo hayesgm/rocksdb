@@ -59,8 +59,35 @@ class BaseDeltaIterator : public Iterator {
 
   void SeekToLast() override {
     forward_ = false;
-    base_iterator_->SeekToLast();
-    delta_iterator_->SeekToLast();
+
+    // is there an upper bound constraint?
+    if (read_options_ != nullptr && read_options_->iterate_upper_bound != nullptr) {
+
+      // yes, and is base_iterator already constrained by an upper_bound?
+      if (!base_iterator_->has_upper_bound()) {
+        // no, so we have to seek it to before iterate_upper_bound
+        base_iterator_->Seek(*(read_options_->iterate_upper_bound));
+        if (base_iterator_->Valid()) {
+          base_iterator_->Prev();  // upper bound should be exclusive!
+        }
+      } else {
+        // yes, so the base_iterator will take care of iterate_upper_bound for us
+        base_iterator_->SeekToLast();
+      }
+
+      // delta iterator does not itself support iterate_upper_bound,
+      // so we have to seek it to before iterate_upper_bound
+      delta_iterator_->Seek(*(read_options_->iterate_upper_bound));
+      if (delta_iterator_->Valid()) {
+        delta_iterator_->Prev();  // upper bound should be exclusive!
+      }
+
+    } else {
+      // no upper cound constraint, so just SeekToLast on both
+      base_iterator_->SeekToLast();
+      delta_iterator_->SeekToLast();
+    }
+
     UpdateCurrent();
   }
 
@@ -252,8 +279,16 @@ class BaseDeltaIterator : public Iterator {
       base_iterator_->Prev();
     }
   }
-  bool BaseValid() const { return base_iterator_->Valid(); }
-  bool DeltaValid() const { return delta_iterator_->Valid(); }
+  bool BaseValid() const {
+    // NOTE: we don't need the bounds check on
+    // base_iterator if the base iterator has an
+    // upper_bounds_check already
+    return base_iterator_->Valid() &&
+        (base_iterator_->has_upper_bound() ? true : IsWithinBounds(base_iterator_->key()));
+  }
+  bool DeltaValid() const {
+    return delta_iterator_->Valid() && IsWithinBounds(delta_iterator_->Entry().key);
+  }
   void UpdateCurrent() {
 // Suppress false positive clang analyzer warnings.
 #ifndef __clang_analyzer__
@@ -268,7 +303,9 @@ class BaseDeltaIterator : public Iterator {
         current_at_base_ = false;
         return;
       }
+
       equal_keys_ = false;
+
       if (!BaseValid()) {
         if (!base_iterator_->status().ok()) {
           // Expose the error status and stop.
@@ -276,18 +313,12 @@ class BaseDeltaIterator : public Iterator {
           return;
         }
 
-        // Base has finished.
+        // Base and Delta have both finished.
         if (!DeltaValid()) {
           // Finished
           return;
         }
-        if (read_options_ != nullptr && read_options_->iterate_upper_bound != nullptr) {
-          if (comparator_->Compare(delta_entry.key, *(read_options_->iterate_upper_bound)) >=
-              0) {
-            // out of upper bound -> finished.
-            return;
-          }
-        }
+
         if (delta_entry.type == kDeleteRecord ||
             delta_entry.type == kSingleDeleteRecord) {
           AdvanceDelta();
@@ -295,11 +326,16 @@ class BaseDeltaIterator : public Iterator {
           current_at_base_ = false;
           return;
         }
+
       } else if (!DeltaValid()) {
-        // Delta has finished.
+        // Base is unfinished, but Delta has finished.
         current_at_base_ = true;
         return;
+
       } else {
+
+        // Base and Delta are both unfinished.
+
         int compare =
             (forward_ ? 1 : -1) *
             comparator_->Compare(delta_entry.key, base_iterator_->key());
@@ -312,11 +348,13 @@ class BaseDeltaIterator : public Iterator {
             current_at_base_ = false;
             return;
           }
+
           // Delta is less advanced and is delete.
           AdvanceDelta();
           if (equal_keys_) {
             AdvanceBase();
           }
+
         } else {
           current_at_base_ = true;
           return;
@@ -326,6 +364,21 @@ class BaseDeltaIterator : public Iterator {
 
     AssertInvariants();
 #endif  // __clang_analyzer__
+  }
+
+  bool IsWithinBounds(const Slice& key) const {
+    if (read_options_ != nullptr) {
+      // TODO(AR) should this only be used when moving backward?
+      if (read_options_->iterate_lower_bound != nullptr) {
+        return comparator_->Compare(key, *(read_options_->iterate_lower_bound)) >= 0;
+      }
+
+      // TODO(AR) should this only be used when moving forward?
+      if (read_options_->iterate_upper_bound != nullptr) {
+        return comparator_->Compare(key, *(read_options_->iterate_upper_bound)) < 0;
+      }
+    }
+    return true;
   }
 
   bool forward_;
