@@ -35,7 +35,7 @@ class BaseDeltaIterator : public Iterator {
   BaseDeltaIterator(Iterator* base_iterator, WBWIIterator* delta_iterator,
                     const Comparator* comparator,
                     const ReadOptions* read_options = nullptr)
-      : forward_(true),
+      : progress_(Progress::TO_BE_DETERMINED),
         current_at_base_(true),
         equal_keys_(false),
         status_(Status::OK()),
@@ -51,14 +51,14 @@ class BaseDeltaIterator : public Iterator {
   }
 
   void SeekToFirst() override {
-    forward_ = true;
+    progress_ = Progress::SEEK_TO_FIRST;
     base_iterator_->SeekToFirst();
     delta_iterator_->SeekToFirst();
     UpdateCurrent();
   }
 
   void SeekToLast() override {
-    forward_ = false;
+    progress_ = Progress::SEEK_TO_LAST;
 
     // is there an upper bound constraint?
     if (read_options_ != nullptr && read_options_->iterate_upper_bound != nullptr) {
@@ -92,14 +92,14 @@ class BaseDeltaIterator : public Iterator {
   }
 
   void Seek(const Slice& k) override {
-    forward_ = true;
+    progress_ = Progress::SEEK;
     base_iterator_->Seek(k);
     delta_iterator_->Seek(k);
     UpdateCurrent();
   }
 
   void SeekForPrev(const Slice& k) override {
-    forward_ = false;
+    progress_ = Progress::SEEK_FOR_PREV;
     base_iterator_->SeekForPrev(k);
     delta_iterator_->SeekForPrev(k);
     UpdateCurrent();
@@ -111,33 +111,46 @@ class BaseDeltaIterator : public Iterator {
       return;
     }
 
-    if (!forward_) {
-      // Need to change direction
+    if (IsMovingBackward()) {
+      // currently moving backward, so we need to change direction
       // if our direction was backward and we're not equal, we have two states:
-      // * both iterators are valid: we're already in a good state (current
+      //     * both iterators are valid: we're already in a good state (current
       // shows to smaller)
-      // * only one iterator is valid: we need to advance that iterator
-      forward_ = true;
+      //     * only one iterator is valid: we need to advance that iterator
+
       equal_keys_ = false;
+
       if (!BaseValid()) {
         assert(DeltaValid());
-        base_iterator_->SeekToFirst();
+        if (progress_ != Progress::SEEK_TO_LAST) {
+          base_iterator_->SeekToFirst();
+        }
       } else if (!DeltaValid()) {
-        delta_iterator_->SeekToFirst();
-      } else if (current_at_base_) {
-        // Change delta from larger than base to smaller
-        AdvanceDelta();
+        if (progress_ != Progress::SEEK_TO_LAST) {
+          delta_iterator_->SeekToFirst();
+        }
       } else {
-        // Change base from larger than delta to smaller
-        AdvanceBase();
-      }
-      if (DeltaValid() && BaseValid()) {
-        if (comparator_->Equal(delta_iterator_->Entry().key,
-                               base_iterator_->key())) {
-          equal_keys_ = true;
+
+        progress_ = Progress::FORWARD;
+        if (current_at_base_) {
+          // Change delta from larger than base to smaller
+          AdvanceDelta();
+        } else {
+          // Change base from larger than delta to smaller
+          AdvanceBase();
+        }
+
+        if (DeltaValid() && BaseValid()) {
+          if (comparator_->Equal(delta_iterator_->Entry().key,
+                                base_iterator_->key())) {
+            equal_keys_ = true;
+          }
         }
       }
     }
+
+    progress_ = Progress::FORWARD;
+
     Advance();
   }
 
@@ -147,26 +160,36 @@ class BaseDeltaIterator : public Iterator {
       return;
     }
 
-    if (forward_) {
-      // Need to change direction
-      // if our direction was backward and we're not equal, we have two states:
-      // * both iterators are valid: we're already in a good state (current
+    if (IsMovingForward()) {
+      // currently moving forward, so we need to change direction
+      // if our direction was forward and we're not equal, we have two states:
+      //     * both iterators are valid: we're already in a good state (current
       // shows to smaller)
-      // * only one iterator is valid: we need to advance that iterator
-      forward_ = false;
+      //     * only one iterator is valid: we need to advance that iterator
+
       equal_keys_ = false;
+
       if (!BaseValid()) {
         assert(DeltaValid());
-        base_iterator_->SeekToLast();
+        if (progress_ != Progress::SEEK_TO_FIRST) {
+          base_iterator_->SeekToLast();
+        }
       } else if (!DeltaValid()) {
-        delta_iterator_->SeekToLast();
-      } else if (current_at_base_) {
-        // Change delta from less advanced than base to more advanced
-        AdvanceDelta();
+        if (progress_ != Progress::SEEK_TO_FIRST) {
+          delta_iterator_->SeekToLast();
+        }
       } else {
-        // Change base from less advanced than delta to more advanced
-        AdvanceBase();
+
+        progress_ = Progress::BACKWARD;
+        if (current_at_base_) {
+          // Change delta from less advanced than base to more advanced
+          AdvanceDelta();
+        } else {
+          // Change base from less advanced than delta to more advanced
+          AdvanceBase();
+        }
       }
+
       if (DeltaValid() && BaseValid()) {
         if (comparator_->Equal(delta_iterator_->Entry().key,
                                base_iterator_->key())) {
@@ -174,6 +197,8 @@ class BaseDeltaIterator : public Iterator {
         }
       }
     }
+
+    progress_ = Progress::BACKWARD;
 
     Advance();
   }
@@ -232,7 +257,7 @@ class BaseDeltaIterator : public Iterator {
            delta_iterator_->Entry().type != kLogDataRecord);
     int compare = comparator_->Compare(delta_iterator_->Entry().key,
                                        base_iterator_->key());
-    if (forward_) {
+    if (IsMovingForward()) {
       // current_at_base -> compare < 0
       assert(!current_at_base_ || compare < 0);
       // !current_at_base -> compare <= 0
@@ -266,14 +291,14 @@ class BaseDeltaIterator : public Iterator {
   }
 
   void AdvanceDelta() {
-    if (forward_) {
+    if (IsMovingForward()) {
       delta_iterator_->Next();
     } else {
       delta_iterator_->Prev();
     }
   }
   void AdvanceBase() {
-    if (forward_) {
+    if (IsMovingForward()) {
       base_iterator_->Next();
     } else {
       base_iterator_->Prev();
@@ -337,7 +362,7 @@ class BaseDeltaIterator : public Iterator {
         // Base and Delta are both unfinished.
 
         int compare =
-            (forward_ ? 1 : -1) *
+            (IsMovingForward() ? 1 : -1) *
             comparator_->Compare(delta_entry.key, base_iterator_->key());
         if (compare <= 0) {  // delta bigger or equal
           if (compare == 0) {
@@ -381,7 +406,27 @@ class BaseDeltaIterator : public Iterator {
     return true;
   }
 
-  bool forward_;
+  inline bool IsMovingForward() const {
+    return progress_ < Progress::BACKWARD;
+  }
+
+  inline bool IsMovingBackward() const {
+    return progress_ > Progress::FORWARD;
+  }
+
+  enum Progress {
+    TO_BE_DETERMINED = 0,
+
+    SEEK_TO_FIRST = 1,
+    SEEK = 2,
+    FORWARD = 3,
+
+    BACKWARD = 4,
+    SEEK_FOR_PREV = 5,
+    SEEK_TO_LAST = 6
+  };
+
+  Progress progress_;
   bool current_at_base_;
   bool equal_keys_;
   Status status_;
