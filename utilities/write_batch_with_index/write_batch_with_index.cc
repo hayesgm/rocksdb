@@ -61,8 +61,8 @@ class BaseDeltaIterator : public Iterator {
     progress_ = Progress::SEEK_TO_LAST;
 
     // is there an upper bound constraint?
-    if (read_options_ != nullptr && read_options_->iterate_upper_bound != nullptr) {
-
+    if (read_options_ != nullptr &&
+        read_options_->iterate_upper_bound != nullptr) {
       // yes, and is base_iterator already constrained by an upper_bound?
       if (!base_iterator_->has_upper_bound()) {
         // no, so we have to seek it to before iterate_upper_bound
@@ -71,7 +71,8 @@ class BaseDeltaIterator : public Iterator {
           base_iterator_->Prev();  // upper bound should be exclusive!
         }
       } else {
-        // yes, so the base_iterator will take care of iterate_upper_bound for us
+        // yes, so the base_iterator will take care of iterate_upper_bound for
+        // us
         base_iterator_->SeekToLast();
       }
 
@@ -130,7 +131,6 @@ class BaseDeltaIterator : public Iterator {
           delta_iterator_->SeekToFirst();
         }
       } else {
-
         progress_ = Progress::FORWARD;
         if (current_at_base_) {
           // Change delta from larger than base to smaller
@@ -142,7 +142,7 @@ class BaseDeltaIterator : public Iterator {
 
         if (DeltaValid() && BaseValid()) {
           if (comparator_->Equal(delta_iterator_->Entry().key,
-                                base_iterator_->key())) {
+                                 base_iterator_->key())) {
             equal_keys_ = true;
           }
         }
@@ -179,7 +179,6 @@ class BaseDeltaIterator : public Iterator {
           delta_iterator_->SeekToLast();
         }
       } else {
-
         progress_ = Progress::BACKWARD;
         if (current_at_base_) {
           // Change delta from less advanced than base to more advanced
@@ -309,10 +308,13 @@ class BaseDeltaIterator : public Iterator {
     // base_iterator if the base iterator has an
     // upper_bounds_check already
     return base_iterator_->Valid() &&
-        (base_iterator_->has_upper_bound() ? true : IsWithinBounds(base_iterator_->key()));
+           (base_iterator_->has_upper_bound()
+                ? true
+                : IsWithinBounds(base_iterator_->key()));
   }
   bool DeltaValid() const {
-    return delta_iterator_->Valid() && IsWithinBounds(delta_iterator_->Entry().key);
+    return delta_iterator_->Valid() &&
+           IsWithinBounds(delta_iterator_->Entry().key);
   }
   void UpdateCurrent() {
 // Suppress false positive clang analyzer warnings.
@@ -358,7 +360,6 @@ class BaseDeltaIterator : public Iterator {
         return;
 
       } else {
-
         // Base and Delta are both unfinished.
 
         int compare =
@@ -395,24 +396,22 @@ class BaseDeltaIterator : public Iterator {
     if (read_options_ != nullptr) {
       // TODO(AR) should this only be used when moving backward?
       if (read_options_->iterate_lower_bound != nullptr) {
-        return comparator_->Compare(key, *(read_options_->iterate_lower_bound)) >= 0;
+        return comparator_->Compare(key,
+                                    *(read_options_->iterate_lower_bound)) >= 0;
       }
 
       // TODO(AR) should this only be used when moving forward?
       if (read_options_->iterate_upper_bound != nullptr) {
-        return comparator_->Compare(key, *(read_options_->iterate_upper_bound)) < 0;
+        return comparator_->Compare(key,
+                                    *(read_options_->iterate_upper_bound)) < 0;
       }
     }
     return true;
   }
 
-  inline bool IsMovingForward() const {
-    return progress_ < Progress::BACKWARD;
-  }
+  inline bool IsMovingForward() const { return progress_ < Progress::BACKWARD; }
 
-  inline bool IsMovingBackward() const {
-    return progress_ > Progress::FORWARD;
-  }
+  inline bool IsMovingBackward() const { return progress_ > Progress::FORWARD; }
 
   enum Progress {
     TO_BE_DETERMINED = 0,
