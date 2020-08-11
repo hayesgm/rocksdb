@@ -591,12 +591,26 @@ class KVIter : public Iterator {
   }
 };
 
-void AssertIter(Iterator* iter, const std::string& key,
-                const std::string& value) {
-  ASSERT_OK(iter->status());
-  ASSERT_TRUE(iter->Valid());
-  ASSERT_EQ(key, iter->key().ToString());
-  ASSERT_EQ(value, iter->value().ToString());
+::testing::AssertionResult IterEquals(Iterator* iter,
+    const std::string& key,const std::string& value) {
+  auto s = iter->status();
+  if (!s.ok()) {
+    return ::testing::AssertionFailure() << "Iterator NOT OK; status is: " << s.ToString();
+  }
+
+  if (!iter->Valid()) {
+    return ::testing::AssertionFailure() << "Iterator is invalid";
+  }
+
+  if (key != iter->key()) {
+    return ::testing::AssertionFailure() << "Iterator::key(): '" << iter->key().ToString(false) << "' is not equal to '" << key << "'";
+  }
+
+  if (value != iter->value()) {
+    return ::testing::AssertionFailure() << "Iterator::value(): '" << iter->value().ToString(false) << "' is not equal to '" << value << "'";
+  }
+
+  return ::testing::AssertionSuccess();
 }
 
 void AssertItersEqual(Iterator* iter1, Iterator* iter2) {
@@ -743,33 +757,33 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBase) {
         batch.NewIteratorWithBase(&cf1, new KVIter(&map)));
 
     iter->SeekToFirst();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Next();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Next();
-    AssertIter(iter.get(), "e", "ee");
+    ASSERT_TRUE(IterEquals(iter.get(), "e", "ee"));
     iter->Next();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->SeekToLast();
-    AssertIter(iter.get(), "e", "ee");
+    ASSERT_TRUE(IterEquals(iter.get(), "e", "ee"));
     iter->Prev();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Prev();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Prev();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->Seek("b");
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
 
     iter->Prev();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
 
     iter->Seek("a");
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
   }
 
   // Test the case that there is one element in the write batch
@@ -781,7 +795,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBase) {
         batch.NewIteratorWithBase(&cf1, new KVIter(&empty_map)));
 
     iter->SeekToFirst();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Next();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
@@ -801,56 +815,56 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBase) {
         batch.NewIteratorWithBase(&cf1, new KVIter(&map)));
 
     iter->SeekToFirst();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Next();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Next();
-    AssertIter(iter.get(), "cc", "cccc");
+    ASSERT_TRUE(IterEquals(iter.get(), "cc", "cccc"));
     iter->Next();
-    AssertIter(iter.get(), "d", "dd");
+    ASSERT_TRUE(IterEquals(iter.get(), "d", "dd"));
     iter->Next();
-    AssertIter(iter.get(), "f", "ff");
+    ASSERT_TRUE(IterEquals(iter.get(), "f", "ff"));
     iter->Next();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->SeekToLast();
-    AssertIter(iter.get(), "f", "ff");
+    ASSERT_TRUE(IterEquals(iter.get(), "f", "ff"));
     iter->Prev();
-    AssertIter(iter.get(), "d", "dd");
+    ASSERT_TRUE(IterEquals(iter.get(), "d", "dd"));
     iter->Prev();
-    AssertIter(iter.get(), "cc", "cccc");
+    ASSERT_TRUE(IterEquals(iter.get(), "cc", "cccc"));
     iter->Prev();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Next();
-    AssertIter(iter.get(), "cc", "cccc");
+    ASSERT_TRUE(IterEquals(iter.get(), "cc", "cccc"));
     iter->Prev();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Prev();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Prev();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->Seek("c");
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
 
     iter->Seek("cb");
-    AssertIter(iter.get(), "cc", "cccc");
+    ASSERT_TRUE(IterEquals(iter.get(), "cc", "cccc"));
 
     iter->Seek("cc");
-    AssertIter(iter.get(), "cc", "cccc");
+    ASSERT_TRUE(IterEquals(iter.get(), "cc", "cccc"));
     iter->Next();
-    AssertIter(iter.get(), "d", "dd");
+    ASSERT_TRUE(IterEquals(iter.get(), "d", "dd"));
 
     iter->Seek("e");
-    AssertIter(iter.get(), "f", "ff");
+    ASSERT_TRUE(IterEquals(iter.get(), "f", "ff"));
 
     iter->Prev();
-    AssertIter(iter.get(), "d", "dd");
+    ASSERT_TRUE(IterEquals(iter.get(), "d", "dd"));
 
     iter->Next();
-    AssertIter(iter.get(), "f", "ff");
+    ASSERT_TRUE(IterEquals(iter.get(), "f", "ff"));
   }
 
   {
@@ -859,36 +873,36 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBase) {
         batch.NewIteratorWithBase(&cf1, new KVIter(&empty_map)));
 
     iter->SeekToFirst();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Next();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Next();
-    AssertIter(iter.get(), "d", "dd");
+    ASSERT_TRUE(IterEquals(iter.get(), "d", "dd"));
     iter->Next();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->SeekToLast();
-    AssertIter(iter.get(), "d", "dd");
+    ASSERT_TRUE(IterEquals(iter.get(), "d", "dd"));
     iter->Prev();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Prev();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
 
     iter->Prev();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->Seek("aa");
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Next();
-    AssertIter(iter.get(), "d", "dd");
+    ASSERT_TRUE(IterEquals(iter.get(), "d", "dd"));
 
     iter->Seek("ca");
-    AssertIter(iter.get(), "d", "dd");
+    ASSERT_TRUE(IterEquals(iter.get(), "d", "dd"));
 
     iter->Prev();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
   }
 }
 
@@ -917,7 +931,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -949,7 +963,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -984,7 +998,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1019,7 +1033,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1054,7 +1068,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1089,7 +1103,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1124,7 +1138,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1159,7 +1173,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1187,7 +1201,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseSeekToLastOnBaseAndBatch) 
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1196,32 +1210,32 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseSeekToLastOnBaseAndBatch) 
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k04", "v04");
+  ASSERT_TRUE(IterEquals(iter.get(), "k04", "v04"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k03", "v03");
+  ASSERT_TRUE(IterEquals(iter.get(), "k03", "v03"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k02", "v02");
+  ASSERT_TRUE(IterEquals(iter.get(), "k02", "v02"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k01", "v01");
+  ASSERT_TRUE(IterEquals(iter.get(), "k01", "v01"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
@@ -1230,23 +1244,23 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseSeekToLastOnBaseAndBatch) 
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   // random seek forward
   iter->Seek("k04");
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k04", "v04");
+  ASSERT_TRUE(IterEquals(iter.get(), "k04", "v04"));
 
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1255,7 +1269,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseSeekToLastOnBaseAndBatch) 
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1283,7 +1297,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseSeekToLastOnBatchAndBase) 
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1292,32 +1306,32 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseSeekToLastOnBatchAndBase) 
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k04", "v04");
+  ASSERT_TRUE(IterEquals(iter.get(), "k04", "v04"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k03", "v03");
+  ASSERT_TRUE(IterEquals(iter.get(), "k03", "v03"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k02", "v02");
+  ASSERT_TRUE(IterEquals(iter.get(), "k02", "v02"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k01", "v01");
+  ASSERT_TRUE(IterEquals(iter.get(), "k01", "v01"));
 
   iter->Prev();
   ASSERT_OK(iter->status());
@@ -1326,23 +1340,23 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseSeekToLastOnBatchAndBase) 
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   // random seek forward
   iter->Seek("k04");
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k04", "v04");
+  ASSERT_TRUE(IterEquals(iter.get(), "k04", "v04"));
 
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
 
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1351,7 +1365,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseSeekToLastOnBatchAndBase) 
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
 }
 
 TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBaseWithoutBaseConstraint) {
@@ -1382,11 +1396,11 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBaseWithoutBas
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k1", "v1");
+  ASSERT_TRUE(IterEquals(iter.get(), "k1", "v1"));
   iter->Next();
-  AssertIter(iter.get(), "k2", "v2");
+  ASSERT_TRUE(IterEquals(iter.get(), "k2", "v2"));
   iter->Next();
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1395,7 +1409,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBaseWithoutBas
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1407,9 +1421,9 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBaseWithoutBas
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k2", "v2");
+  ASSERT_TRUE(IterEquals(iter.get(), "k2", "v2"));
   iter->Next();
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1443,11 +1457,11 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBaseWithBaseCo
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k1", "v1");
+  ASSERT_TRUE(IterEquals(iter.get(), "k1", "v1"));
   iter->Next();
-  AssertIter(iter.get(), "k2", "v2");
+  ASSERT_TRUE(IterEquals(iter.get(), "k2", "v2"));
   iter->Next();
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1456,7 +1470,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBaseWithBaseCo
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1468,9 +1482,9 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBaseWithBaseCo
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k2", "v2");
+  ASSERT_TRUE(IterEquals(iter.get(), "k2", "v2"));
   iter->Next();
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1502,11 +1516,11 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBatch) {
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k1", "v1");
+  ASSERT_TRUE(IterEquals(iter.get(), "k1", "v1"));
   iter->Next();
-  AssertIter(iter.get(), "k2", "v2");
+  ASSERT_TRUE(IterEquals(iter.get(), "k2", "v2"));
   iter->Next();
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1515,7 +1529,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBatch) {
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1527,9 +1541,9 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseUpperBoundOnBatch) {
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k2", "v2");
+  ASSERT_TRUE(IterEquals(iter.get(), "k2", "v2"));
   iter->Next();
-  AssertIter(iter.get(), "k3", "v3");
+  ASSERT_TRUE(IterEquals(iter.get(), "k3", "v3"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1567,11 +1581,11 @@ TEST_F(WriteBatchWithIndexTest,
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k01", "v01");
+  ASSERT_TRUE(IterEquals(iter.get(), "k01", "v01"));
   iter->Next();
-  AssertIter(iter.get(), "k02", "v02");
+  ASSERT_TRUE(IterEquals(iter.get(), "k02", "v02"));
   iter->Next();
-  AssertIter(iter.get(), "k03", "v03");
+  ASSERT_TRUE(IterEquals(iter.get(), "k03", "v03"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1580,7 +1594,7 @@ TEST_F(WriteBatchWithIndexTest,
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k03", "v03");
+  ASSERT_TRUE(IterEquals(iter.get(), "k03", "v03"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1592,9 +1606,9 @@ TEST_F(WriteBatchWithIndexTest,
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k02", "v02");
+  ASSERT_TRUE(IterEquals(iter.get(), "k02", "v02"));
   iter->Next();
-  AssertIter(iter.get(), "k03", "v03");
+  ASSERT_TRUE(IterEquals(iter.get(), "k03", "v03"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1607,11 +1621,11 @@ TEST_F(WriteBatchWithIndexTest,
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
   iter->Next();
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
   iter->Next();
-  AssertIter(iter.get(), "k07", "v07");
+  ASSERT_TRUE(IterEquals(iter.get(), "k07", "v07"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1619,7 +1633,7 @@ TEST_F(WriteBatchWithIndexTest,
   iter->SeekToLast();
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
-  AssertIter(iter.get(), "k07", "v07");
+  ASSERT_TRUE(IterEquals(iter.get(), "k07", "v07"));
 
   iter->Next();
   ASSERT_OK(iter->status());
@@ -1632,9 +1646,9 @@ TEST_F(WriteBatchWithIndexTest,
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
   iter->Next();
-  AssertIter(iter.get(), "k07", "v07");
+  ASSERT_TRUE(IterEquals(iter.get(), "k07", "v07"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1676,25 +1690,25 @@ TEST_F(WriteBatchWithIndexTest,
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k01", "v01");
+  ASSERT_TRUE(IterEquals(iter.get(), "k01", "v01"));
   iter->Next();
-  AssertIter(iter.get(), "k02", "v02");
+  ASSERT_TRUE(IterEquals(iter.get(), "k02", "v02"));
   iter->Next();
-  AssertIter(iter.get(), "k03", "v03");
+  ASSERT_TRUE(IterEquals(iter.get(), "k03", "v03"));
   iter->Next();
-  AssertIter(iter.get(), "k04", "v04");
+  ASSERT_TRUE(IterEquals(iter.get(), "k04", "v04"));
   iter->Next();
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
   iter->Next();
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
   iter->Next();
-  AssertIter(iter.get(), "k07", "v07");
+  ASSERT_TRUE(IterEquals(iter.get(), "k07", "v07"));
   iter->Next();
-  AssertIter(iter.get(), "k08", "v08");
+  ASSERT_TRUE(IterEquals(iter.get(), "k08", "v08"));
   iter->Next();
-  AssertIter(iter.get(), "k09", "v09");
+  ASSERT_TRUE(IterEquals(iter.get(), "k09", "v09"));
   iter->Next();
-  AssertIter(iter.get(), "k0A", "v0A");
+  ASSERT_TRUE(IterEquals(iter.get(), "k0A", "v0A"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1736,25 +1750,25 @@ TEST_F(WriteBatchWithIndexTest,
   ASSERT_OK(iter->status());
   ASSERT_TRUE(iter->Valid());
 
-  AssertIter(iter.get(), "k01", "v01");
+  ASSERT_TRUE(IterEquals(iter.get(), "k01", "v01"));
   iter->Next();
-  AssertIter(iter.get(), "k02", "v02");
+  ASSERT_TRUE(IterEquals(iter.get(), "k02", "v02"));
   iter->Next();
-  AssertIter(iter.get(), "k03", "v03");
+  ASSERT_TRUE(IterEquals(iter.get(), "k03", "v03"));
   iter->Next();
-  AssertIter(iter.get(), "k04", "v04");
+  ASSERT_TRUE(IterEquals(iter.get(), "k04", "v04"));
   iter->Next();
-  AssertIter(iter.get(), "k05", "v05");
+  ASSERT_TRUE(IterEquals(iter.get(), "k05", "v05"));
   iter->Next();
-  AssertIter(iter.get(), "k06", "v06");
+  ASSERT_TRUE(IterEquals(iter.get(), "k06", "v06"));
   iter->Next();
-  AssertIter(iter.get(), "k07", "v07");
+  ASSERT_TRUE(IterEquals(iter.get(), "k07", "v07"));
   iter->Next();
-  AssertIter(iter.get(), "k08", "v08");
+  ASSERT_TRUE(IterEquals(iter.get(), "k08", "v08"));
   iter->Next();
-  AssertIter(iter.get(), "k09", "v09");
+  ASSERT_TRUE(IterEquals(iter.get(), "k09", "v09"));
   iter->Next();
-  AssertIter(iter.get(), "k0A", "v0A");
+  ASSERT_TRUE(IterEquals(iter.get(), "k0A", "v0A"));
   iter->Next();
   ASSERT_OK(iter->status());
   ASSERT_FALSE(iter->Valid()) << "Should have reached upper_bound";
@@ -1774,7 +1788,7 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseReverseCmp) {
         batch.NewIteratorWithBase(&cf1, new KVIter(&empty_map)));
 
     iter->SeekToFirst();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Next();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
@@ -1787,29 +1801,29 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseReverseCmp) {
         batch.NewIteratorWithBase(&cf1, new KVIter(&map)));
 
     iter->SeekToFirst();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Next();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Next();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->SeekToLast();
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
     iter->Prev();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
     iter->Prev();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->Seek("b");
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
 
     iter->Prev();
-    AssertIter(iter.get(), "c", "cc");
+    ASSERT_TRUE(IterEquals(iter.get(), "c", "cc"));
 
     iter->Seek("a");
-    AssertIter(iter.get(), "a", "aa");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "aa"));
   }
 
   // default column family
@@ -1820,29 +1834,29 @@ TEST_F(WriteBatchWithIndexTest, TestIteraratorWithBaseReverseCmp) {
     std::unique_ptr<Iterator> iter(batch.NewIteratorWithBase(new KVIter(&map)));
 
     iter->SeekToFirst();
-    AssertIter(iter.get(), "a", "b");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "b"));
     iter->Next();
-    AssertIter(iter.get(), "b", "");
+    ASSERT_TRUE(IterEquals(iter.get(), "b", ""));
     iter->Next();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->SeekToLast();
-    AssertIter(iter.get(), "b", "");
+    ASSERT_TRUE(IterEquals(iter.get(), "b", ""));
     iter->Prev();
-    AssertIter(iter.get(), "a", "b");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "b"));
     iter->Prev();
     ASSERT_OK(iter->status());
     ASSERT_TRUE(!iter->Valid());
 
     iter->Seek("b");
-    AssertIter(iter.get(), "b", "");
+    ASSERT_TRUE(IterEquals(iter.get(), "b", ""));
 
     iter->Prev();
-    AssertIter(iter.get(), "a", "b");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "b"));
 
     iter->Seek("0");
-    AssertIter(iter.get(), "a", "b");
+    ASSERT_TRUE(IterEquals(iter.get(), "a", "b"));
   }
 }
 
