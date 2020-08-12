@@ -61,18 +61,17 @@ class BaseDeltaIterator : public Iterator {
     progress_ = Progress::SEEK_TO_LAST;
 
     // is there an upper bound constraint?
-    if (read_options_ != nullptr &&
-        read_options_->iterate_upper_bound != nullptr) {
+    const Slice* base_upper_bound = base_iterator_upper_bound();
+    if (base_upper_bound != nullptr) {
       // yes, and is base_iterator already constrained by an upper_bound?
-      if (!base_iterator_->has_upper_bound()) {
-        // no, so we have to seek it to before iterate_upper_bound
-        base_iterator_->Seek(*(read_options_->iterate_upper_bound));
+      if (!base_iterator_->check_upper_bound()) {
+        // no, so we have to seek it to before base_upper_bound
+        base_iterator_->Seek(*(base_upper_bound));
         if (base_iterator_->Valid()) {
           base_iterator_->Prev();  // upper bound should be exclusive!
         }
       } else {
-        // yes, so the base_iterator will take care of iterate_upper_bound for
-        // us
+        // yes, so the base_iterator will take care of base_upper_bound
         base_iterator_->SeekToLast();
       }
 
@@ -308,13 +307,13 @@ class BaseDeltaIterator : public Iterator {
     // base_iterator if the base iterator has an
     // upper_bounds_check already
     return base_iterator_->Valid() &&
-           (base_iterator_->has_upper_bound()
+           (base_iterator_->check_upper_bound()
                 ? true
-                : IsWithinBounds(base_iterator_->key()));
+                : BaseIsWithinBounds());
   }
   bool DeltaValid() const {
     return delta_iterator_->Valid() &&
-           IsWithinBounds(delta_iterator_->Entry().key);
+           DeltaIsWithinBounds();
   }
   void UpdateCurrent() {
 // Suppress false positive clang analyzer warnings.
@@ -392,17 +391,61 @@ class BaseDeltaIterator : public Iterator {
 #endif  // __clang_analyzer__
   }
 
-  bool IsWithinBounds(const Slice& key) const {
+  /**
+   * Returns the upper bound for the base iterator,
+   * or nullptr if there is no upper bound.
+   *
+   * The base iterator may have its own upper bound,
+   * if not not we use the upper bound from this
+   * iterator's ReadOptions (if present).
+   */
+  inline const Slice* base_iterator_upper_bound() const {
+    const Slice* iterate_upper_bound = base_iterator_->iterate_upper_bound();
+    if (iterate_upper_bound == nullptr && read_options_ != nullptr) {
+      return read_options_->iterate_upper_bound;
+    }
+    return iterate_upper_bound;
+  }
+
+  /**
+   * Returns the lower bound for the base iterator,
+   * or nullptr if there is no lower bound.
+   *
+   * The base iterator may have its own lower bound,
+   * if not not we use the lower bound from this
+   * iterator's ReadOptions (if present).
+   */
+  inline const Slice* base_iterator_lower_bound() const {
+    const Slice* iterate_lower_bound = base_iterator_->iterate_lower_bound();
+    if (iterate_lower_bound == nullptr && read_options_ != nullptr) {
+      return read_options_->iterate_lower_bound;
+    }
+    return iterate_lower_bound;
+  }
+
+  bool BaseIsWithinBounds() const {
+    const Slice* lower_bound = base_iterator_lower_bound();
+    if (IsMovingBackward() && lower_bound != nullptr) {
+        return comparator_->Compare(base_iterator_->key(), *lower_bound) >= 0;
+    }
+
+    const Slice* upper_bound = base_iterator_upper_bound();
+    if (IsMovingForward() && upper_bound != nullptr) {
+      return comparator_->Compare(base_iterator_->key(), *upper_bound) < 0;
+    }
+
+    return true;
+  }
+
+  bool DeltaIsWithinBounds() const {
     if (read_options_ != nullptr) {
-      // TODO(AR) should this only be used when moving backward?
-      if (read_options_->iterate_lower_bound != nullptr) {
-        return comparator_->Compare(key,
+      if (IsMovingBackward() && read_options_->iterate_lower_bound != nullptr) {
+        return comparator_->Compare(delta_iterator_->Entry().key,
                                     *(read_options_->iterate_lower_bound)) >= 0;
       }
 
-      // TODO(AR) should this only be used when moving forward?
-      if (read_options_->iterate_upper_bound != nullptr) {
-        return comparator_->Compare(key,
+      if (IsMovingForward() && read_options_->iterate_upper_bound != nullptr) {
+        return comparator_->Compare(delta_iterator_->Entry().key,
                                     *(read_options_->iterate_upper_bound)) < 0;
       }
     }
