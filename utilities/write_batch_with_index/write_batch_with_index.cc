@@ -307,13 +307,10 @@ class BaseDeltaIterator : public Iterator {
     // base_iterator if the base iterator has an
     // upper_bounds_check already
     return base_iterator_->Valid() &&
-           (base_iterator_->check_upper_bound()
-                ? true
-                : BaseIsWithinBounds());
+           (base_iterator_->check_upper_bound() ? true : BaseIsWithinBounds());
   }
   bool DeltaValid() const {
-    return delta_iterator_->Valid() &&
-           DeltaIsWithinBounds();
+    return delta_iterator_->Valid() && DeltaIsWithinBounds();
   }
   void UpdateCurrent() {
 // Suppress false positive clang analyzer warnings.
@@ -426,7 +423,7 @@ class BaseDeltaIterator : public Iterator {
   bool BaseIsWithinBounds() const {
     const Slice* lower_bound = base_iterator_lower_bound();
     if (IsMovingBackward() && lower_bound != nullptr) {
-        return comparator_->Compare(base_iterator_->key(), *lower_bound) >= 0;
+      return comparator_->Compare(base_iterator_->key(), *lower_bound) >= 0;
     }
 
     const Slice* upper_bound = base_iterator_upper_bound();
