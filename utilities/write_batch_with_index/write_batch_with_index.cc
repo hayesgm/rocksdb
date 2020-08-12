@@ -84,8 +84,8 @@ class BaseDeltaIterator : public Iterator {
     }
 
     // is there an upper bound constraint on delta_iterator_?
-    if (read_options_ != nullptr
-        && read_options_->iterate_upper_bound != nullptr) {
+    if (read_options_ != nullptr &&
+        read_options_->iterate_upper_bound != nullptr) {
       // delta iterator does not itself support iterate_upper_bound,
       // so we have to seek it to before iterate_upper_bound
       delta_iterator_->Seek(*(read_options_->iterate_upper_bound));
