@@ -70,7 +70,8 @@ class BaseDeltaIterator : public Iterator {
         if (base_iterator_->Valid()) {
           base_iterator_->Prev();  // upper bound should be exclusive!
         } else {
-          // the base_upper_bound is beyond the base_iterator, so just SeekToLast()
+          // the base_upper_bound is beyond the base_iterator, so just
+          // SeekToLast()
           base_iterator_->SeekToLast();
         }
       } else {
