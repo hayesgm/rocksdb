@@ -120,8 +120,10 @@ class Iterator : public Cleanable {
 
   /**
    * true if this iterator is already
-   * checking ReadOptions::iterate_lower_bound,
-   * false otherwise.
+   * checking ReadOptions::iterate_lower_bound.
+   * false indicates that either the iterator does
+   * not check the lower bound, or that it does not
+   * report that it is performing the check.
    */
   virtual bool ChecksLowerBound() const { return false; }
 
@@ -138,8 +140,10 @@ class Iterator : public Cleanable {
 
   /**
    * true if this iterator is already
-   * checking ReadOptions::iterate_upper_bound,
-   * false otherwise.
+   * checking ReadOptions::iterate_upper_bound.
+   * false indicates that either the iterator does
+   * not check the upper bound, or that it does not
+   * report that it is performing the check.
    */
   virtual bool ChecksUpperBound() const { return false; }
 
