@@ -233,6 +233,18 @@ class BaseDeltaIterator : public Iterator {
     return delta_iterator_->status();
   }
 
+  bool ChecksLowerBound() const override { return false; }
+
+  const Slice* lower_bound() const override {
+    return base_iterator_lower_bound();
+  }
+
+  bool ChecksUpperBound() const override { return true; }
+
+  const Slice* upper_bound() const override {
+    return base_iterator_upper_bound();
+  }
+
  private:
   void AssertInvariants() {
 #ifndef NDEBUG
