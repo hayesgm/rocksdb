@@ -445,14 +445,18 @@ class BaseDeltaIterator : public Iterator {
   }
 
   bool BaseIsWithinBounds() const {
-    const Slice* lower_bound = base_iterator_lower_bound();
-    if (IsMovingBackward() && lower_bound != nullptr) {
-      return comparator_->Compare(base_iterator_->key(), *lower_bound) >= 0;
+    if (IsMovingBackward()) {
+      const Slice* lower_bound = base_iterator_lower_bound();
+      if (lower_bound != nullptr) {
+        return comparator_->Compare(base_iterator_->key(), *lower_bound) >= 0;
+      }
     }
 
-    const Slice* upper_bound = base_iterator_upper_bound();
-    if (IsMovingForward() && upper_bound != nullptr) {
-      return comparator_->Compare(base_iterator_->key(), *upper_bound) < 0;
+    if (IsMovingForward()) {
+      const Slice* upper_bound = base_iterator_upper_bound();
+      if (upper_bound != nullptr) {
+        return comparator_->Compare(base_iterator_->key(), *upper_bound) < 0;
+      }
     }
 
     return true;
