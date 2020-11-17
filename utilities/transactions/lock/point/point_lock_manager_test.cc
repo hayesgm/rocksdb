@@ -277,7 +277,7 @@ TEST_F(PointLockManagerTest, Deadlock) {
   // txn1 tries to lock k2, will block forever.
   port::Thread t = BlockUntilWaitingTxn([&]() {
     // block because txn2 is holding a lock on k2.
-    locker_->TryLock(txn1, 1, "k2", env_, true);
+    ASSERT_OK(locker_->TryLock(txn1, 1, "k2", env_, true));
   });
 
   auto s = locker_->TryLock(txn2, 1, "k1", env_, true);

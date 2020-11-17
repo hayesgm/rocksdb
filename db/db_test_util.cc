@@ -680,7 +680,7 @@ void DBTestBase::Close() {
 void DBTestBase::DestroyAndReopen(const Options& options) {
   // Destroy using last options
   Destroy(last_options_);
-  ASSERT_OK(TryReopen(options));
+  Reopen(options);
 }
 
 void DBTestBase::Destroy(const Options& options, bool delete_cf_paths) {

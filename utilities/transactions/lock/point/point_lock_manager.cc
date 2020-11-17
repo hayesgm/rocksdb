@@ -490,7 +490,14 @@ bool PointLockManager::IncrementWaiters(
                         extracted_info.m_waiting_key});
         head = queue_parents[head];
       }
-      env->GetCurrentTime(&deadlock_time);
+      if (!env->GetCurrentTime(&deadlock_time).ok()) {
+        /*
+          TODO(AR) this preserves the current behaviour whilst checking the
+          status of env->GetCurrentTime to ensure that ASSERT_STATUS_CHECKED
+          passes. Should we instead raise an error if !ok() ?
+        */
+        deadlock_time = 0;
+      }
       std::reverse(path.begin(), path.end());
       dlock_buffer_.AddNewPath(DeadlockPath(path, deadlock_time));
       deadlock_time = 0;
@@ -506,7 +513,14 @@ bool PointLockManager::IncrementWaiters(
   }
 
   // Wait cycle too big, just assume deadlock.
-  env->GetCurrentTime(&deadlock_time);
+  if (!env->GetCurrentTime(&deadlock_time).ok()) {
+    /*
+      TODO(AR) this preserves the current behaviour whilst checking the status
+      of env->GetCurrentTime to ensure that ASSERT_STATUS_CHECKED passes.
+      Should we instead raise an error if !ok() ?
+    */
+    deadlock_time = 0;
+  }
   dlock_buffer_.AddNewPath(DeadlockPath(deadlock_time, true));
   DecrementWaitersImpl(txn, wait_ids);
   return true;
