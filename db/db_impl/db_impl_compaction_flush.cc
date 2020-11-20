@@ -35,8 +35,10 @@ bool DBImpl::EnoughRoomForCompaction(
     // Pass the current bg_error_ to SFM so it can decide what checks to
     // perform. If this DB instance hasn't seen any error yet, the SFM can be
     // optimistic and not do disk space checks
+    Status bg_error = error_handler_.GetBGError();
     enough_room =
-        sfm->EnoughRoomForCompaction(cfd, inputs, error_handler_.GetBGError());
+        sfm->EnoughRoomForCompaction(cfd, inputs, bg_error);
+    bg_error.PermitUncheckedError();  // bg_error is just a copy of the Status from the error_handler_
     if (enough_room) {
       *sfm_reserved_compact_space = true;
     }
@@ -1373,8 +1375,6 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
 
   SuperVersionContext sv_context(/* create_superversion */ true);
 
-  Status status;
-
   InstrumentedMutexLock guard_lock(&mutex_);
 
   // only allow one thread refitting
@@ -1392,20 +1392,24 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     to_level = FindMinimumEmptyLevelFitting(cfd, mutable_cf_options, level);
   }
 
+  Status status;
+
   auto* vstorage = cfd->current()->storage_info();
   if (to_level != level) {
     if (to_level > level) {
       if (level == 0) {
         refitting_level_ = false;
-        return Status::NotSupported(
-            "Cannot change from level 0 to other levels.");
+        status =
+            Status::NotSupported("Cannot change from level 0 to other levels.");
+        return status;
       }
       // Check levels are empty for a trivial move
       for (int l = level + 1; l <= to_level; l++) {
         if (vstorage->NumLevelFiles(l) > 0) {
           refitting_level_ = false;
-          return Status::NotSupported(
+          status = Status::NotSupported(
               "Levels between source and target are not empty for a move.");
+          return status;
         }
       }
     } else {
@@ -1414,8 +1418,9 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
       for (int l = to_level; l < level; l++) {
         if (vstorage->NumLevelFiles(l) > 0) {
           refitting_level_ = false;
-          return Status::NotSupported(
+          status = Status::NotSupported(
               "Levels between source and target are not empty for a move.");
+          return status;
         }
       }
     }

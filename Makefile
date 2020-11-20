@@ -594,12 +594,17 @@ ifdef ASSERT_STATUS_CHECKED
 		dbformat_test \
 		db_basic_test \
 		db_blob_basic_test \
+		db_compaction_test \
+		db_compaction_filter_test \
+		db_dynamic_level_test \
 		db_flush_test \
+		db_inplace_update_test \
 		db_with_timestamp_basic_test \
 		db_with_timestamp_compaction_test \
 		db_options_test \
 		db_properties_test \
 		db_secondary_test \
+		db_sst_test \
 		options_file_test \
 		defer_test \
 		filename_test \

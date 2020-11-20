@@ -99,8 +99,10 @@ Status DeleteScheduler::DeleteFile(const std::string& file_path,
 
   // Update the total trash size
   uint64_t trash_file_size = 0;
-  fs_->GetFileSize(trash_file, IOOptions(), &trash_file_size, nullptr);
-  total_trash_size_.fetch_add(trash_file_size);
+  IOStatus io_s = fs_->GetFileSize(trash_file, IOOptions(), &trash_file_size, nullptr);
+  if (io_s.ok()) {
+    total_trash_size_.fetch_add(trash_file_size);
+  }
 
   // Add file to delete queue
   {
@@ -169,16 +171,16 @@ Status DeleteScheduler::MarkAsTrash(const std::string& file_path,
     return Status::InvalidArgument("file_path is corrupted");
   }
 
-  Status s;
   if (DeleteScheduler::IsTrashFile(file_path)) {
     // This is already a trash file
     *trash_file = file_path;
-    return s;
+    return Status::OK();
   }
 
   *trash_file = file_path + kTrashExtension;
   // TODO(tec) : Implement Env::RenameFileIfNotExist and remove
   //             file_move_mu mutex.
+  Status s;
   int cnt = 0;
   InstrumentedMutexLock l(&file_move_mu_);
   while (true) {
@@ -197,7 +199,7 @@ Status DeleteScheduler::MarkAsTrash(const std::string& file_path,
     cnt++;
   }
   if (s.ok()) {
-    sst_file_manager_->OnMoveFile(file_path, *trash_file);
+    s = sst_file_manager_->OnMoveFile(file_path, *trash_file);
   }
   return s;
 }

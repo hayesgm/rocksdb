@@ -31,7 +31,8 @@ TEST_F(DBIOFailureTest, DropWrites) {
     ASSERT_OK(Put("foo", "v1"));
     ASSERT_EQ("v1", Get("foo"));
     Compact("a", "z");
-    const size_t num_files = CountFiles();
+    size_t num_files;
+    ASSERT_OK(CountFiles(&num_files));
     // Force out-of-space errors
     env_->drop_writes_.store(true, std::memory_order_release);
     env_->sleep_counter_.Reset();
@@ -56,7 +57,9 @@ TEST_F(DBIOFailureTest, DropWrites) {
     ASSERT_EQ("5", property_value);
 
     env_->drop_writes_.store(false, std::memory_order_release);
-    ASSERT_LT(CountFiles(), num_files + 3);
+    size_t count;
+    ASSERT_OK(CountFiles(&count));
+    ASSERT_LT(count, num_files + 3);
 
     // Check that compaction attempts slept after errors
     // TODO @krad: Figure out why ASSERT_EQ 5 keeps failing in certain compiler

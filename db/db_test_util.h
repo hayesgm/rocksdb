@@ -1068,9 +1068,13 @@ class DBTestBase : public testing::Test {
   // Return spread of files per level
   std::string FilesPerLevel(int cf = 0);
 
-  size_t CountFiles();
+  Status CountFiles(size_t* count);
 
-  uint64_t Size(const Slice& start, const Slice& limit, int cf = 0);
+  Status Size(const Slice& start, const Slice& limit, uint64_t* size) {
+    return Size(start, limit, 0, size);
+  }
+
+  Status Size(const Slice& start, const Slice& limit, int cf, uint64_t* size);
 
   void Compact(int cf, const Slice& start, const Slice& limit,
                uint32_t target_path_id);

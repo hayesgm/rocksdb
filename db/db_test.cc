@@ -1382,17 +1382,19 @@ TEST_F(DBTest, ApproximateSizesMemTable) {
   SizeApproximationOptions size_approx_options;
   size_approx_options.include_memtabtles = true;
   size_approx_options.include_files = true;
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   ASSERT_GT(size, 6000);
   ASSERT_LT(size, 204800);
   // Zero if not including mem table
-  db_->GetApproximateSizes(&r, 1, &size);
+  ASSERT_OK(db_->GetApproximateSizes(&r, 1, &size));
   ASSERT_EQ(size, 0);
 
   start = Key(500);
   end = Key(600);
   r = Range(start, end);
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   ASSERT_EQ(size, 0);
 
   for (int i = 0; i < N; i++) {
@@ -1402,13 +1404,15 @@ TEST_F(DBTest, ApproximateSizesMemTable) {
   start = Key(500);
   end = Key(600);
   r = Range(start, end);
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   ASSERT_EQ(size, 0);
 
   start = Key(100);
   end = Key(1020);
   r = Range(start, end);
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   ASSERT_GT(size, 6000);
 
   options.max_write_buffer_number = 8;
@@ -1434,29 +1438,32 @@ TEST_F(DBTest, ApproximateSizesMemTable) {
   start = Key(100);
   end = Key(300);
   r = Range(start, end);
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   ASSERT_EQ(size, 0);
 
   start = Key(1050);
   end = Key(1080);
   r = Range(start, end);
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   ASSERT_GT(size, 6000);
 
   start = Key(2100);
   end = Key(2300);
   r = Range(start, end);
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   ASSERT_EQ(size, 0);
 
   start = Key(1050);
   end = Key(1080);
   r = Range(start, end);
   uint64_t size_with_mt, size_without_mt;
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1,
-                           &size_with_mt);
+  ASSERT_OK(db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1,
+                                     &size_with_mt));
   ASSERT_GT(size_with_mt, 6000);
-  db_->GetApproximateSizes(&r, 1, &size_without_mt);
+  ASSERT_OK(db_->GetApproximateSizes(&r, 1, &size_without_mt));
   ASSERT_EQ(size_without_mt, 0);
 
   Flush();
@@ -1468,15 +1475,16 @@ TEST_F(DBTest, ApproximateSizesMemTable) {
   start = Key(1050);
   end = Key(1080);
   r = Range(start, end);
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1,
-                           &size_with_mt);
-  db_->GetApproximateSizes(&r, 1, &size_without_mt);
+  ASSERT_OK(db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1,
+                                     &size_with_mt));
+  ASSERT_OK(db_->GetApproximateSizes(&r, 1, &size_without_mt));
   ASSERT_GT(size_with_mt, size_without_mt);
   ASSERT_GT(size_without_mt, 6000);
 
   // Check that include_memtabtles flag works as expected
   size_approx_options.include_memtabtles = false;
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   ASSERT_EQ(size, size_without_mt);
 
   // Check that files_size_error_margin works as expected, when the heuristic
@@ -1485,10 +1493,12 @@ TEST_F(DBTest, ApproximateSizesMemTable) {
   end = Key(1000 + N - 2);
   r = Range(start, end);
   size_approx_options.files_size_error_margin = -1.0;  // disabled
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size));
   uint64_t size2;
   size_approx_options.files_size_error_margin = 0.5;  // enabled, but not used
-  db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size2);
+  ASSERT_OK(
+      db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size2));
   ASSERT_EQ(size, size2);
 }
 
@@ -1539,14 +1549,16 @@ TEST_F(DBTest, ApproximateSizesFilesWithErrorMargin) {
 
     // Get the precise size without any approximation heuristic
     uint64_t size;
-    db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size);
+    ASSERT_OK(db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1,
+                                       &size));
     ASSERT_NE(size, 0);
 
     // Get the size with an approximation heuristic
     uint64_t size2;
     const double error_margin = 0.2;
     size_approx_options.files_size_error_margin = error_margin;
-    db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1, &size2);
+    ASSERT_OK(db_->GetApproximateSizes(size_approx_options, default_cf, &r, 1,
+                                       &size2));
     ASSERT_LT(size2, size * (1 + error_margin));
     ASSERT_GT(size2, size * (1 - error_margin));
   }
@@ -1562,7 +1574,7 @@ TEST_F(DBTest, ApproximateSizesFilesWithErrorMargin) {
       const std::string end = Key(i + 11);  // overlap by 1 key
       const Range r(start, end);
       uint64_t size;
-      db_->GetApproximateSizes(&r, 1, &size);
+      ASSERT_OK(db_->GetApproximateSizes(&r, 1, &size));
       ASSERT_LE(size, 11 * 100);
     }
   }

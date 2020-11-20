@@ -1127,27 +1127,34 @@ std::string DBTestBase::FilesPerLevel(int cf) {
 }
 #endif  // !ROCKSDB_LITE
 
-size_t DBTestBase::CountFiles() {
+Status DBTestBase::CountFiles(size_t* count) {
   std::vector<std::string> files;
-  env_->GetChildren(dbname_, &files);
+  Status s = env_->GetChildren(dbname_, &files);
+  if (!s.ok()) {
+    return s;
+  }
 
   std::vector<std::string> logfiles;
   if (dbname_ != last_options_.wal_dir) {
-    env_->GetChildren(last_options_.wal_dir, &logfiles);
+    s = env_->GetChildren(last_options_.wal_dir, &logfiles);
+    if (!s.ok()) {
+      return s;
+    }
   }
 
-  return files.size() + logfiles.size();
+  *count = files.size() + logfiles.size();
+
+  return Status::OK();
 }
 
-uint64_t DBTestBase::Size(const Slice& start, const Slice& limit, int cf) {
+Status DBTestBase::Size(const Slice& start, const Slice& limit, int cf,
+                        uint64_t* size) {
   Range r(start, limit);
-  uint64_t size;
   if (cf == 0) {
-    db_->GetApproximateSizes(&r, 1, &size);
+    return db_->GetApproximateSizes(&r, 1, size);
   } else {
-    db_->GetApproximateSizes(handles_[1], &r, 1, &size);
+    return db_->GetApproximateSizes(handles_[1], &r, 1, size);
   }
-  return size;
 }
 
 void DBTestBase::Compact(int cf, const Slice& start, const Slice& limit,
@@ -1266,8 +1273,8 @@ void DBTestBase::GenerateNewRandomFile(Random* rnd, bool nowait) {
   }
   ASSERT_OK(Put("key" + rnd->RandomString(7), rnd->RandomString(200)));
   if (!nowait) {
-    dbfull()->TEST_WaitForFlushMemTable();
-    dbfull()->TEST_WaitForCompact();
+    ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+    ASSERT_OK(dbfull()->TEST_WaitForCompact());
   }
 }
 
