@@ -867,7 +867,7 @@ TEST_F(DBSSTTest, CancellingManualCompactionsWorks) {
   ASSERT_OK(Flush());
 
   // OK, now trigger a manual compaction
-  ASSERT_OK(dbfull()->CompactRange(CompactRangeOptions(), nullptr, nullptr));
+  ASSERT_TRUE(dbfull()->CompactRange(CompactRangeOptions(), nullptr, nullptr).IsCompactionTooLarge());
 
   // Wait for manual compaction to get scheduled and finish
   ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
@@ -880,7 +880,7 @@ TEST_F(DBSSTTest, CancellingManualCompactionsWorks) {
 
   // Now make sure CompactFiles also gets cancelled
   auto l0_files = collector->GetFlushedFiles();
-  ASSERT_OK(dbfull()->CompactFiles(ROCKSDB_NAMESPACE::CompactionOptions(), l0_files, 0));
+  ASSERT_TRUE(dbfull()->CompactFiles(ROCKSDB_NAMESPACE::CompactionOptions(), l0_files, 0).IsCompactionTooLarge());
 
   // Wait for manual compaction to get scheduled and finish
   ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
